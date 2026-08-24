@@ -1,13 +1,30 @@
-name: Coverage
+name: coverage
+
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+
+# Cancel a superseded run on the same branch/PR to save CI minutes.
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+# Job-level default is read-only; only the publish job below escalates
+# to write, and only for the one step that actually needs it.
 permissions:
-  contents: write
+  contents: read
+
 jobs:
+  # -----------------------------------------------------------------------
+  # Computes coverage and produces a shields.io-compatible coverage.json.
+  # Runs on every push and PR (read-only, no publishing) so you get the
+  # number in the logs even for branches that never reach main.
+  # -----------------------------------------------------------------------
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: contracts
@@ -19,27 +36,108 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable # pinned so `forge coverage`'s report format doesn't shift under us silently
+
+      - name: Cache Foundry build
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-coverage-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          restore-keys: |
+            foundry-coverage-${{ runner.os }}-
 
       - name: Install dependencies
         run: forge install
 
       - name: Run coverage
-        run: forge coverage --report summary > coverage.txt
+        run: forge coverage --report summary | tee coverage.txt
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
 
-      - name: Generate coverage.json
+      # Robust parsing: locate the Total row explicitly (not just any line
+      # containing "Total", which could also match a file named that),
+      # extract the first percentage on it, and fail loudly with the
+      # offending output if the report format ever changes instead of
+      # silently emitting an empty/garbage badge.
+      - name: Parse coverage percentage
+        id: parse
         run: |
-          COVERAGE=$(cat coverage.txt | grep "Total" | awk '{print $4}' | tr -d '%')
-          echo "Coverage: $COVERAGE"
+          set -euo pipefail
+
+          TOTAL_LINE=$(grep -E '^\| *Total *\|' coverage.txt || true)
+
+          if [ -z "$TOTAL_LINE" ]; then
+            echo "::error::No 'Total' row found in forge coverage output — report format may have changed."
+            cat coverage.txt
+            exit 1
+          fi
+
+          # First "NN.NN%" on that row, e.g. "87.34" out of "87.34% (123/141)".
+          COVERAGE=$(echo "$TOTAL_LINE" | grep -oE '[0-9]+\.[0-9]+%' | head -n1 | tr -d '%')
+
+          if [ -z "$COVERAGE" ]; then
+            echo "::error::Found a Total row but couldn't extract a percentage from it."
+            echo "Row was: $TOTAL_LINE"
+            exit 1
+          fi
+
+          if ! echo "$COVERAGE" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Extracted value '$COVERAGE' is not a valid number."
+            exit 1
+          fi
+
+          echo "Parsed coverage: ${COVERAGE}%"
+          echo "coverage=$COVERAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Generate coverage.json badge payload
+        run: |
+          set -euo pipefail
+          COVERAGE="${{ steps.parse.outputs.coverage }}"
+
           COLOR="red"
           if (( $(echo "$COVERAGE >= 80" | bc -l) )); then COLOR="yellow"; fi
           if (( $(echo "$COVERAGE >= 90" | bc -l) )); then COLOR="brightgreen"; fi
-          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"${COLOR}\"}" > coverage.json
+
+          mkdir -p coverage-badge
+          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"${COLOR}\"}" \
+            > coverage-badge/coverage.json
+
+      # Hand off ONLY the badge file to the publish job — not the whole
+      # contracts/ tree (submodule sources, cache, out/, etc.), which the
+      # old single-job version was pushing to gh-pages via publish_dir.
+      - name: Upload coverage badge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: contracts/coverage-badge/coverage.json
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # Publishes the badge to gh-pages. Only runs on a genuine push to main —
+  # never on a PR — so an unmerged branch can never overwrite the public
+  # coverage number that the README badge reads. This is the only job
+  # with write access, and only for this one deploy step.
+  # -----------------------------------------------------------------------
+  publish:
+    needs: coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download coverage badge artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-badge
+          path: coverage-badge
 
       - name: Deploy coverage.json to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
-          publish_dir: contracts
+          publish_dir: coverage-badge # only coverage.json, nothing else
