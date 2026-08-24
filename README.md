@@ -6,7 +6,7 @@
 ![Last Commit](https://img.shields.io/github/last-commit/no-hive/priority_fee_pulse_hook?style=flat&color=blue)
 ![Commit Count](https://img.shields.io/github/commit-activity/t/no-hive/priority_fee_pulse_hook?style=flat&color=blue)
 ![Tests](https://github.com/no-hive/priority_fee_pulse_hook/actions/workflows/tests.yml/badge.svg)
-![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/no-hive/priority_fee_pulse_hookgh-pages/coverage.json?style=flat&color=32CB55)
+![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/no-hive/priority_fee_pulse_hook/gh-pages/coverage.json?style=flat&color=32CB55)
 
 #### __Uniswap v4 hook to resist MEV using a time-weighted median priority fee. 100% on-chain math.__ 
 
