@@ -1,4 +1,4 @@
-<img width="2000" height="500" alt="Frame 45(10)" src="https://github.com/user-attachments/assets/bd9bf345-df3e-4940-b017-479fbf349533" />
+<img width="1832" height="500" alt="Frame 45(15)" src="https://github.com/user-attachments/assets/1b99a4e2-2478-4091-b26a-f6b02298e1c9" />
 
 ![Uniswap_v4_hook](https://img.shields.io/badge/Uniswap_Hook_Incubator-FF007A?style=flat)
 ![License](https://img.shields.io/github/license/no-hive/priority_fee_pulse_hook?style=flat&color=purple)
