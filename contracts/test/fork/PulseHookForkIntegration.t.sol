@@ -74,7 +74,7 @@ contract PulseHookForkIntegrationTest is Test {
     function setUp() public {
         vm.createSelectFork(vm.envString("MAINNET_RPC_URL"));
 
-        HelperConfig.DeploymentConfig memory cfg = HelperConfig.getDeploymentConfig();
+        HelperConfig.NetworkConfig memory cfg = HelperConfig.getDeploymentConfig();
         poolManager = IPoolManager(cfg.poolManager);
         listedTokens = cfg.soundTokens; // includes WETH and USDC on mainnet
 

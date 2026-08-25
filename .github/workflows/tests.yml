@@ -1,10 +1,72 @@
 name: tests
+
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
+
+# Cancel a superseded run on the same branch/PR so we don't burn
+# CI minutes on outdated pushes.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege default; no job here needs to write anything.
+permissions:
+  contents: read
+
 jobs:
-  test:
+  # ---------------------------------------------------------------------
+  # Cheap, no-RPC job. Looks at the commits being tested and decides
+  # whether a `feat:` (Conventional Commits) type is present. A `feat`
+  # is what triggers a SemVer *minor* bump later in release.yml, so it's
+  # also the trigger for paying for the mainnet-fork test suite below.
+  # Plain fix/docs/chore/etc. commits never touch the fork tests.
+  # ---------------------------------------------------------------------
+  determine-bump:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      bump: ${{ steps.check.outputs.bump }}
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need full commit log to diff against the base branch
+
+      - name: Check commits for a feat: type
+        id: check
+        run: |
+          # On a PR: everything between the PR base branch and HEAD.
+          # On a direct push to main: just the commits that were pushed.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="origin/${{ github.base_ref }}..HEAD"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+
+          # feat / feat(scope): / feat(scope)!: all count as a minor bump.
+          if git log "$RANGE" --pretty=%s | grep -Eq '^feat(\([a-z0-9.-]+\))?!?:'; then
+            echo "feat: commit found -> minor bump, fork tests will run."
+            echo "bump=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "No feat: commit found -> patch bump, fork tests skipped."
+            echo "bump=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------
+  # Regular unit/integration tests. No mainnet RPC involved, so this
+  # always runs and never costs anything beyond normal CI minutes.
+  #
+  # NOTE: adjust the --no-match-path glob below if your fork tests don't
+  # live under contracts/test/fork/** — it just needs to match whatever
+  # --match-path the fork-tests job below uses, so the two jobs are
+  # mutually exclusive and nothing runs twice or gets skipped entirely.
+  # ---------------------------------------------------------------------
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: contracts
@@ -17,10 +79,70 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      # Cache compiled artifacts + resolved libs between runs.
+      - name: Cache Foundry build
+        uses: actions/cache@v4
+        with:
+          path: |
+            contracts/cache
+            contracts/out
+          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          restore-keys: |
+            foundry-${{ runner.os }}-
+
       - name: Install dependencies
         run: forge install
 
-      - name: Run tests
-        run: forge test -vvv
+      - name: Run unit tests
+        run: forge test -vvv --no-match-path "test/fork/**"
+
+  # ---------------------------------------------------------------------
+  # Expensive job: forks mainnet via a paid RPC. Only runs when
+  # determine-bump found a feat: commit. Mark THIS job as a required
+  # status check in main's branch protection rules — GitHub only
+  # requires checks that actually ran, so patch-only PRs won't be
+  # blocked waiting on a job that never started.
+  #
+  # NOTE: secrets (MAINNET_RPC_URL) are NOT available to pull_request
+  # workflows triggered from a fork. External contributors' feat PRs
+  # will skip/fail this job — document that in CONTRIBUTING.md so it
+  # doesn't look like a broken pipeline.
+  # ---------------------------------------------------------------------
+  fork-tests:
+    needs: determine-bump
+    if: needs.determine-bump.outputs.bump == 'minor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      # Cache RPC responses (at whatever block your fork tests pin to)
+      # plus build artifacts, so re-runs against the same block/commit
+      # don't re-pay for the same archive-node calls.
+      - name: Cache Foundry RPC + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.foundry/cache/rpc
+            contracts/cache
+            contracts/out
+          key: foundry-fork-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          restore-keys: |
+            foundry-fork-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: forge install
+
+      - name: Run fork tests
+        run: forge test -vvv --match-path "test/fork/**"
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
