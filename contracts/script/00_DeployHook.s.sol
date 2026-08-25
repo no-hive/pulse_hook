@@ -8,9 +8,9 @@ import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {BaseScript} from "./base/BaseScript.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 
-import {MedianPriorityFeeHook} from "../src/MPFHook.sol";
+import {PulseHook} from "../src/PulseHook.sol";
 
-/// @notice Mines the address and deploys the MedianPriorityFeeHook.sol Hook contract
+/// @notice Mines the address and deploys the PulseHook.sol Hook contract
 contract DeployHookScript is BaseScript {
     function run() public {
         HelperConfig.DeploymentConfig memory deploymentConfig = HelperConfig.getDeploymentConfig();
@@ -25,13 +25,13 @@ contract DeployHookScript is BaseScript {
         IPoolManager poolManager = IPoolManager(deploymentConfig.poolManager);
         bytes memory constructorArgs = abi.encode(poolManager, listedTokens);
         (address hookAddress, bytes32 salt) =
-            HookMiner.find(CREATE2_FACTORY, flags, type(MedianPriorityFeeHook).creationCode, constructorArgs);
+            HookMiner.find(CREATE2_FACTORY, flags, type(PulseHook).creationCode, constructorArgs);
 
         // Deploy the hook using CREATE2
         vm.startBroadcast();
-        MedianPriorityFeeHook medianPriorityFeeHook = new MedianPriorityFeeHook{salt: salt}(poolManager, listedTokens);
+        PulseHook pulseHook = new PulseHook{salt: salt}(poolManager, listedTokens);
         vm.stopBroadcast();
 
-        require(address(medianPriorityFeeHook) == hookAddress, "DeployHookScript: Hook Address Mismatch");
+        require(address(pulseHook) == hookAddress, "DeployHookScript: Hook Address Mismatch");
     }
 }
