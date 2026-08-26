@@ -1,0 +1,15 @@
+forge-std/=contracts/lib/forge-std/src/
+
+@uniswap/v4-core/=contracts/lib/uniswap-hooks/lib/v4-core/
+@uniswap/v4-periphery/=contracts/lib/uniswap-hooks/lib/v4-periphery/
+v4-core/=contracts/lib/uniswap-hooks/lib/v4-core/
+v4-periphery/=contracts/lib/uniswap-hooks/lib/v4-periphery/
+
+@openzeppelin/uniswap-hooks/=contracts/lib/uniswap-hooks/
+@openzeppelin/contracts/=contracts/lib/uniswap-hooks/lib/v4-core/lib/openzeppelin-contracts/contracts/
+
+hookmate/=contracts/lib/hookmate/src/
+permit2/=contracts/lib/uniswap-hooks/lib/v4-periphery/lib/permit2/
+solmate/=contracts/lib/uniswap-hooks/lib/v4-core/lib/solmate/
+
+@deployers=contracts/test/utils

@@ -5,6 +5,9 @@
   "contracts/lib/hookmate": {
     "rev": "ef3e9845e0b2bc9cd5810644d7d337b00c47bc75"
   },
+  "contracts/lib/openzeppelin-contracts": {
+    "rev": "5fd1781b1454fd1ef8e722282f86f9293cacf256"
+  },
   "contracts/lib/uniswap-hooks": {
     "rev": "acbd604c409a827f7f98c9517236da860c4fca1a"
   },
@@ -13,11 +16,5 @@
   },
   "contracts/lib/v4-periphery": {
     "rev": "3245c3cb99c48fa1dc2459c3b60abc37d4294aba"
-  },
-  "contracts/lib/openzeppelin-contracts": {
-    "tag": {
-      "name": "v5.6.1",
-      "rev": "5fd1781b1454fd1ef8e722282f86f9293cacf256"
-    }
   }
 }
