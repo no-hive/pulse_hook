@@ -8,36 +8,34 @@
 ![Tests](https://github.com/no-hive/pulse_hook/actions/workflows/tests.yml/badge.svg)
 ![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/no-hive/pulse_hook/gh-pages/coverage.json?style=flat&color=32CB55)
 
-#### Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.
+## Pulse Hook
 
-#### 🧬 _No external off-chain modules or oracles. Runs entirely on-chain._
+This hook is build to solve MEV problem for pools with low liquidity - perfect ready-to-use solution for creator coins pools, niche memecoins or launchpads. It uses a priority fee median to track unusual behavior and make MEV-patterned swaps less profitable.
 
-#### [DOCUMENTATION]() - _find more structured hook info here_ / [LLMs]() - _discuss the hook with your favorite ai agent_
+🧬 _No external off-chain modules or oracles. Runs entirely on-chain._
 
-## What is Pulse Hook
+> _inspired by [1]() and [2]()_
 
-Pulse Hook is a Uniswap v4 Hook designed to reduce MEV, especially sandwich attacks, in low-liquidity pools such as newly launched and creator-token markets.
 
-### The challenge
+## How it works
 
-Low-liquidity pools are especially vulnerable to MEV bots. Attackers can use high priority fees to get their transactions included ahead of regular users, execute sandwich attacks, and extract value from traders and liquidity providers.
+1. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
+2. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
+3. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
 
-The challenge is to make this behavior less profitable while keeping the solution fully on-chain, gas-efficient, and independent of external infrastructure.
+---
 
-### The solution
+## Explore the hook
 
-Pulse Hook tracks the priority fees paid by swaps and maintains a shared reference level for the chain.
+#### [DOCUMENTATION]() - find more structured hook info here 
+#### [LLMs]() - discuss the hook with your favorite ai agent
 
-When a swap's priority fee is significantly higher than the typical level, the Hook applies an additional trading fee. This makes aggressive fee-bidding more expensive and can reduce the profitability of MEV strategies.
+--- 
 
-At the same time, the reference level adapts to network-wide demand. When priority fees rise across the entire network, the reference level rises as well, so normal users are not unnecessarily penalized during periods of high network activity.
+## Build with the hook
 
-## How does it work?
 
-Pulse Hook has two main parts:
+#### [INIT POOL]() - find how to deploy a pool with a hook here 
+#### [DELPOY HOOK]() - see how to install the hook to check it, judge it, modify it, deploy it
 
-Dynamic fee — compares each swap's priority fee with the current reference level.
-Shared measurement — provides that reference level using the average of the last 15 block-level snapshots of the running median.
-
-A normal swap pays the standard 0.1% fee. A swap with an unusually high priority fee pays an additional penalty based on the Hook's penalty curve.
 
