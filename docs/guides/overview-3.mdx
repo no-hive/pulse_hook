@@ -1,11 +1,36 @@
 ---
 title: "Init Pool"
-description: "Practical implementation, configuration, deployment, and usage guides"
+description: "Create a Pool with an Existing Hook"
 icon: "point"
 ---
 
-This section will contain practical implementation, configuration, deployment, and usage guides.
+If you want to create a Uniswap v4 pool using an already deployed Pulse Hook, you don't need to deploy the hook yourself.
 
-<Note>
-  Detailed page list: to be defined.
-</Note>
+### 1. Choose your network and hook
+
+Find the deployed hook address for your network in the table below:
+
+| Network | Hook address |
+| --- | --- |
+| Ethereum Mainnet | `YOUR_HOOK_ADDRESS` |
+| ... | `...` |
+
+### 2. Create the pool
+
+When creating the pool, use the hook address as the `hooks` field of the Uniswap v4 `PoolKey`:
+
+```solidity
+PoolKey memory poolKey = PoolKey({
+    currency0: currency0,
+    currency1: currency1,
+    fee: lpFee,
+    tickSpacing: tickSpacing,
+    hooks: hookAddress
+});
+```
+
+Make sure you use the hook address for the **same network** where you are creating the pool.
+
+For the complete pool creation flow, including pool initialization and adding initial liquidity, follow the official [Uniswap v4 Create a Pool guide](https://developers.uniswap.org/docs/protocols/v4/guides/create-pool).
+
+That's it — use the deployed hook address in the `PoolKey`, follow the Uniswap flow, and your pool will use the Pulse Hook.
