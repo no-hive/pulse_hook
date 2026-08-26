@@ -14,6 +14,30 @@
 
 #### [DOCUMENTATION]() - _find more structured hook info here_ / [LLMs]() - _discuss the hook with your favorite ai agent_
 
-## What is Pulse hook
+## What is Pulse Hook
 
-## How it works: step by step
+Pulse Hook is a Uniswap v4 Hook designed to reduce MEV, especially sandwich attacks, in low-liquidity pools such as newly launched and creator-token markets.
+
+### The challenge
+
+Low-liquidity pools are especially vulnerable to MEV bots. Attackers can use high priority fees to get their transactions included ahead of regular users, execute sandwich attacks, and extract value from traders and liquidity providers.
+
+The challenge is to make this behavior less profitable while keeping the solution fully on-chain, gas-efficient, and independent of external infrastructure.
+
+### The solution
+
+Pulse Hook tracks the priority fees paid by swaps and maintains a shared reference level for the chain.
+
+When a swap's priority fee is significantly higher than the typical level, the Hook applies an additional trading fee. This makes aggressive fee-bidding more expensive and can reduce the profitability of MEV strategies.
+
+At the same time, the reference level adapts to network-wide demand. When priority fees rise across the entire network, the reference level rises as well, so normal users are not unnecessarily penalized during periods of high network activity.
+
+## How does it work?
+
+Pulse Hook has two main parts:
+
+Dynamic fee — compares each swap's priority fee with the current reference level.
+Shared measurement — provides that reference level using the average of the last 15 block-level snapshots of the running median.
+
+A normal swap pays the standard 0.1% fee. A swap with an unusually high priority fee pays an additional penalty based on the Hook's penalty curve.
+
