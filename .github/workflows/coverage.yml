@@ -55,7 +55,11 @@ jobs:
         run: forge install
 
       - name: Run coverage
-        run: forge coverage --report summary --no-match-coverage "(test|script|lib)" | tee coverage.txt
+      # Exclude deployment scripts from the coverage report while keeping all
+      # production code under src/ covered, including libraries in src/lib/.
+      # Tests are still executed normally; this only removes script files from
+      # the coverage denominator so the reported percentage reflects production code.
+        run: forge coverage --report summary --no-match-coverage "script" | tee coverage.txt
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
 
