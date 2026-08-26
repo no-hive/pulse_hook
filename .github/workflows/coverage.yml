@@ -45,7 +45,9 @@ jobs:
           path: |
             contracts/cache
             contracts/out
-          key: foundry-coverage-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          # foundry.toml now lives at the monorepo root (not contracts/) —
+          # hashFiles() paths are always relative to GITHUB_WORKSPACE root.
+          key: foundry-coverage-${{ runner.os }}-${{ hashFiles('foundry.toml', 'contracts/lib/**') }}
           restore-keys: |
             foundry-coverage-${{ runner.os }}-
 
