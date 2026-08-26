@@ -14,28 +14,32 @@ This hook is build to solve MEV problem for pools with low liquidity - perfect r
 
 🧬 _No external off-chain modules or oracles. Runs entirely on-chain._
 
-> _inspired by [1]() and [2]()_
+> _inspired by [Uniswap v4 Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) and [median-oracles by saucepoint](github.com/saucepoint/median-oracles)_
 
 
-## How it works
+## What Pulse Hook does
 
-1. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
-2. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
-3. __Time-weighted priority-fee median to increase fees for abnormal MEV-patterned swaps.__ 
+1. __Reads the priority fee__ - Checks the extra fee paid for faster inclusion..
+2. __Compares to the norm__ - Measures it against the recent typical level.
+3. __Normal swaps pay 0.1%__ - No extra fee when bidding is near the norm.
+4. __Aggressive bids pay more__ - Higher-than-normal priority fees trigger a dynamic surcharge.
+5. __Swap executes normally__ - The extra fee goes to the pool.
+6. __Updates from meaningful swaps__ - Eligible trades can update the typical priority fee.
+7. __Resists manipulation__ - Only eligible pools and meaningful price moves affect the shared reference.
 
 ---
 
 ## Explore the hook
 
-#### [DOCUMENTATION]() - find more structured hook info here 
-#### [LLMs]() - discuss the hook with your favorite ai agent
+#### 🔮 [DOCUMENTATION](https://pulse-hook.mintlify.site/introduction) - find much more structured hook info here.
+#### 👾 [LLMs](https://github.com/no-hive/pulse_hook/blob/main/llms/README.md) - discuss the hook and its docs with your favorite ai agent.
 
 --- 
 
 ## Build with the hook
 
 
-#### [INIT POOL]() - find how to deploy a pool with a hook here 
-#### [DELPOY HOOK]() - see how to install the hook to check it, judge it, modify it, deploy it
+#### 🍇 [INIT POOL]() - find how to deploy a pool with a hook here.
+#### ⚗️ [DELPOY HOOK]() - see how to install the hook to check it, judge it, modify it, deploy it.
 
 
