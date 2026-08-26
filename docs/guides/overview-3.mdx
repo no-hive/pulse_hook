@@ -1,36 +1,36 @@
 ---
 title: "Init Pool"
-description: "Create a Pool with an Existing Hook"
+description: "Create a Uniswap v4 pool using an existing Pulse Hook"
 icon: "point"
 ---
 
-If you want to create a Uniswap v4 pool using an already deployed Pulse Hook, you don't need to deploy the hook yourself.
+**If you want to create a Uniswap v4 pool using an already deployed Pulse Hook, you don't need to deploy the hook yourself. Just follow the instructions below.**
 
-### 1. Choose your network and hook
+## 1. Choose your network
 
-Find the deployed hook address for your network in the table below:
+First, select a network where the Pulse Hook is already deployed.
 
-| Network | Hook address |
+| Network | Pulse Hook |
 | --- | --- |
-| Ethereum Mainnet | `YOUR_HOOK_ADDRESS` |
+| Ethereum Mainnet | `0x...` |
 | ... | `...` |
 
-### 2. Create the pool
+Use the hook address corresponding to the network where you are creating the pool.
 
-When creating the pool, use the hook address as the `hooks` field of the Uniswap v4 `PoolKey`:
+## 2. Create your pool
 
-```solidity
-PoolKey memory poolKey = PoolKey({
-    currency0: currency0,
-    currency1: currency1,
-    fee: lpFee,
-    tickSpacing: tickSpacing,
-    hooks: hookAddress
-});
-```
+Follow the official Uniswap v4 guide for creating a pool:
 
-Make sure you use the hook address for the **same network** where you are creating the pool.
+[Create a Pool — Uniswap v4](https://developers.uniswap.org/docs/protocols/v4/guides/create-pool)
 
-For the complete pool creation flow, including pool initialization and adding initial liquidity, follow the official [Uniswap v4 Create a Pool guide](https://developers.uniswap.org/docs/protocols/v4/guides/create-pool).
+When configuring your `PoolKey`, use the deployed Pulse Hook address as the `hooks` field.
 
-That's it — use the deployed hook address in the `PoolKey`, follow the Uniswap flow, and your pool will use the Pulse Hook.
+### Important
+
+When configuring the pool:
+
+\* **Hooks:** use the deployed Pulse Hook address for your selected network. \* **Fee:** select **Dynamic Fee**. \* Configure the remaining pool parameters according to the official Uniswap guide.
+
+That's it.
+
+The Pulse Hook-specific configuration is limited to using the correct deployed hook address and enabling Dynamic Fee. For everything else, follow the official Uniswap v4 pool creation flow.

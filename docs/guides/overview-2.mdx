@@ -1,10 +1,10 @@
 ---
 title: "Deploy Hook"
-description: "Practical implementation, configuration, deployment, and usage guides"
+description: "Deploy the Pulse Hook to any network"
 icon: "point"
 ---
 
-Deploying the hook is not so complex as it might seem to be: 
+**Deploying the Pulse Hook is fully automated by the deployment script. You do not need to manually calculate hook addresses or find CREATE2 salts.**
 
 ## 1. Clone the repository
 
@@ -15,94 +15,214 @@ git clone https://github.com/no-hive/pulse_hook.git
 cd pulse_hook
 ```
 
-The repository is structured as a monorepo. It contains not only the hook itself, but also the project's documentation and dedicated instructions for LLMs and AI agents. This makes it easier for an agent to access the relevant project context, documentation, and development instructions when you work with the project through an AI coding agent.
+The repository is structured as a monorepo and contains the hook implementation, tests, documentation, and development instructions for AI coding agents.
 
 ## 2. Install dependencies
 
-Install all project dependencies using Forge:
+Install the project dependencies using Forge:
 
 ```bash
 forge install
 ```
 
-This installs the dependencies for the entire repository.
+## 3. Build and test
 
-## 3. Compile and test
-
-Before deploying, make sure everything compiles and all tests pass:
+Before deploying, make sure the project compiles and all tests pass:
 
 ```bash
 forge build
 forge test
 ```
 
-**If both commands complete successfully, you're ready to configure the deployment.**
+If both commands complete successfully, you're ready to deploy.
 
-If something goes wrong, first make sure the repository and all dependencies were downloaded successfully. Try running `forge install` again, then run `forge clean` followed by `forge build` and `forge test`. If the problem persists, check the error message and open an issue with the relevant logs.
+## 4. Configure your environment
 
-## 4. Configure environment variables
-
-Start by copying the example environment file and filling in the required values:
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-At minimum, you will need:
+Set the following values:
 
-- `MAINNET_RPC_URL` — RPC endpoint for the network you want to deploy to.
-- `PRIVATE_KEY` — private key of the wallet that will deploy the hook.
-- `WALLET_ADDRESS` — address of the deploying wallet.
+- `RPC_URL` — RPC endpoint for the network you want to deploy to.
+- `PRIVATE_KEY` — private key of the deploying wallet.
+- `WALLET_ADDRESS` — address corresponding to `PRIVATE_KEY`.
 
-Make sure your `.env` file is not committed to the repository.
+> **Security:** Never commit `.env` or expose your private key. For deployments, use a dedicated wallet with only the funds required for gas.
 
-## 5. Deploy
+Before broadcasting the deployment, verify that your RPC points to the intended network:
 
-Run the deployment script with Forge:
+```bash
+cast chain-id --rpc-url $RPC_URL
+```
+
+Also make sure that `WALLET_ADDRESS` corresponds to `PRIVATE_KEY`.
+
+## 5. HelperConfig
+
+The deployment script uses `HelperConfig` to automatically load the correct configuration for the network you are deploying to.
+
+`HelperConfig` reads `block.chainid` at deployment time and selects the corresponding configuration. You do not need to manually specify the chain ID in the deployment command.
+
+<Frame>
+  **Important: deploying to a new network**
+
+  This guide is specifically designed for deploying the Pulse Hook to a network where it has **not been deployed yet**.
+
+  If you are deploying to a new network, add a new network configuration to `HelperConfig` before deploying. This keeps the deployment configuration inside the repository, making the deployment process easier to understand, fully controlled, and automatic.
+
+  You only need to provide the network-specific configuration, such as the Uniswap v4 Pool Manager address and the trusted tokens for that network.
+
+  Once the configuration is added, the deployment script automatically selects it based on the detected chain ID.
+
+  **Do not deploy to an unsupported network without adding its configuration first.**
+</Frame>
+
+### Currently configured networks
+
+| Network | Chain ID | Configuration |
+| --- | --: | --- |
+| Ethereum Mainnet | `1` | Pool Manager \+ trusted tokens |
+| Unichain | `130` | Pool Manager \+ trusted tokens |
+| Ethereum Sepolia | `11155111` | Pool Manager \+ trusted tokens |
+| Base Mainnet | `8453` | Pool Manager \+ trusted tokens |
+| Base Sepolia | `84532` | Pool Manager \+ trusted tokens |
+| Robinhood | `4663` | Pool Manager \+ trusted tokens |
+| Arbitrum One | `42161` | Pool Manager \+ trusted tokens |
+
+### How `HelperConfig` works
+
+The deployment script calls:
+
+```solidity
+HelperConfig.getDeploymentConfig()
+```
+
+The function checks `block.chainid` and selects the appropriate network configuration:
+
+```solidity
+if (block.chainid == SEPOLIA_CHAIN_ID) {
+    return getSepoliaEthConfig();
+} else if (block.chainid == ETHEREUM_MAINNET_CHAIN_ID) {
+    return getEthereumMainnetConfig();
+} else if (block.chainid == UNICHAIN_MAINNET_CHAIN_ID) {
+    return getUnichainConfig();
+}
+// ...
+```
+
+Each network configuration provides:
+
+- the network's **Uniswap v4 Pool Manager address**;
+- a list of **trusted tokens** used by the hook.
+
+For example, the Ethereum Mainnet configuration provides the Uniswap v4 Pool Manager address:
+
+```solidity
+poolManager: 0x000000000004444c5dc75cB358380D2e3dE08A90
+```
+
+and a list of trusted tokens including ETH, WETH, WBTC, UNI, USDC, and USDT.
+
+This means the same deployment command can be used across all configured networks. The network is determined from the RPC endpoint you provide.
+
+> **Important:** `HelperConfig` does not deploy the Pool Manager or tokens. It only selects the network-specific addresses and configuration that the hook should use.
+
+### Adding a new network
+
+To deploy to a network that is not currently supported, add a new configuration function to `HelperConfig` and connect it to the corresponding chain ID.
+
+For example:
+
+```solidity
+function getMyNetworkConfig()
+    internal
+    pure
+    returns (NetworkConfig memory)
+{
+    address[] memory soundTokens = new address[](3);
+
+    soundTokens[0] = address(0);
+    soundTokens[1] = WETH_ADDRESS;
+    soundTokens[2] = USDC_ADDRESS;
+
+    return NetworkConfig({
+        poolManager: POOL_MANAGER_ADDRESS,
+        soundTokens: soundTokens
+    });
+}
+```
+
+Then add the network to `getDeploymentConfig()`:
+
+```solidity
+else if (block.chainid == MY_NETWORK_CHAIN_ID) {
+    return getMyNetworkConfig();
+}
+```
+
+After that, the deployment script will automatically use the new configuration whenever the corresponding chain ID is detected.
+
+> **Important:** For a new network, make sure you use the correct Uniswap v4 Pool Manager address and the correct token addresses for that network.
+
+If `block.chainid` does not match a configured network, the deployment should **revert with an unsupported-network error** rather than silently using a different network configuration.
+
+## 6. Deploy the hook
+
+Once your environment is configured, run:
 
 ```bash
 forge script script/00_DeployHook.s.sol:DeployHookScript \
-  --rpc-url $MAINNET_RPC_URL \
+  --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
   --sender $WALLET_ADDRESS \
   --broadcast
 ```
 
-### Chain configuration
+You do not need to provide a chain ID or manually configure the Pool Manager.
 
-You **do not need to manually specify the chain ID or deployment configuration**.
+The deployment script:
 
-`HelpConfig` automatically detects the chain ID from the network you are deploying to and selects the appropriate deployment arguments for that chain.
+1. detects the network through `block.chainid`;
+2. loads the corresponding `HelperConfig`;
+3. performs the required hook address mining;
+4. deploys the hook to the mined address;
+5. broadcasts the deployment.
 
-In other words, the same deployment command can be used across supported networks. Just point `MAINNET_RPC_URL` to the network you want to deploy to — `HelpConfig` will handle the rest.
+> **Important:** Make sure `RPC_URL` points to the network where you intend to deploy before using `--broadcast`.
 
-> **Important:** Make sure your RPC URL points to the intended network before running the command. The deployment configuration is selected automatically based on the detected chain ID.
+## 7. Verify the deployment
 
-That's it — Forge will broadcast the deployment transaction to the selected network.
+After deployment, find the deployed hook address in the Forge output.
 
-## 6. Verify the hook deployment
+First, verify that contract code exists at the address:
 
-After the deployment, check that the hook has been deployed with the expected permissions.
+```bash
+cast code "$DEPLOYED_HOOK_ADDRESS" \
+  --rpc-url "$RPC_URL"
+```
 
-Find the **deployed hook address** in the Forge deployment logs. This is the address of the hook contract that was created by the deployment script. 
-
-You can add it to .env as \$DEPLOYED\_HOOK\_ADDRESS and then run:
+Then verify the hook permissions:
 
 ```bash
 cast call \
   "$DEPLOYED_HOOK_ADDRESS" \
   "getHookPermissions()(bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool)" \
-  --rpc-url "$MAINNET_RPC_URL"
+  --rpc-url "$RPC_URL"
 ```
 
-The command will return the hook's configured permissions. Compare them with the permissions expected for your hook to make sure the deployment configuration is correct.
+The returned permissions should match the permissions implemented by the Pulse Hook.
 
-> **Note:** The hook address is the address of your deployed hook contract, **not** the Uniswap Pool Manager address.
+> **Note:** The hook address is the address of your deployed hook contract. It is **not** the Uniswap v4 Pool Manager address.
 
-## 7. Hook the pool and have fun
+## 8. Use the hook in a pool
 
-There is no single command for deploying a pool with the hook across different chains, as the required configuration may vary between networks.
+Once the hook is deployed, you can use its address when creating a Uniswap v4 pool.
 
-Here you can find the script that was used to test pool deployment with this hook on Ethereum Mainnet: \[LINK\].
+For pool creation, check  [Init Pool](/guides/overview-3) guidance.
 
-Adapt it to your target network and pool configuration, then deploy your pool and have fun!
+## The conclusion
+
+That's it. The Pulse Hook repository handles network configuration, hook address mining, and deployment automatically. Once the hook is deployed, use its address and **Dynamic Fee** when following the official Uniswap v4 pool creation guide.
