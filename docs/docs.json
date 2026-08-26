@@ -61,7 +61,7 @@
   "navbar": {
     "links": [
       {
-        "href": "https://github.com/no-hive/priority_fee_pulse_hook",
+        "href": "https://github.com/no-hive/pulse_hook",
         "label": "GITHUB REPO"
       }
     ]
