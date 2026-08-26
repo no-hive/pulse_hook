@@ -46,9 +46,9 @@
             "group": "Guides",
             "icon": "book",
             "pages": [
-              "guides/get_started",
-              "guides/init_pool",
-              "guides/deploy_hook"
+              "guides/overview",
+              "guides/overview-3",
+              "guides/overview-2"
             ]
           }
         ]
