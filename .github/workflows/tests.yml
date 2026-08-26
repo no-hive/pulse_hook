@@ -35,7 +35,7 @@ jobs:
         with:
           fetch-depth: 0 # need full commit log to diff against the base branch
 
-      - name: Check commits for a feat: type
+      - name: "Check commits for a feat: type"
         id: check
         run: |
           # On a PR: everything between the PR base branch and HEAD.
