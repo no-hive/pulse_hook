@@ -59,10 +59,11 @@ jobs:
   # Regular unit/integration tests. No mainnet RPC involved, so this
   # always runs and never costs anything beyond normal CI minutes.
   #
-  # NOTE: adjust the --no-match-path glob below if your fork tests don't
-  # live under contracts/test/fork/** — it just needs to match whatever
-  # --match-path the fork-tests job below uses, so the two jobs are
-  # mutually exclusive and nothing runs twice or gets skipped entirely.
+  # NOTE: match-path/no-match-path patterns are matched against the test
+  # file path relative to the *project root* (where foundry.toml lives),
+  # which is now the monorepo root — not contracts/. That's why the glob
+  # below is "contracts/test/fork/**" and not just "test/fork/**". If you
+  # ever move foundry.toml back down into contracts/, drop the prefix.
   # ---------------------------------------------------------------------
   unit-tests:
     runs-on: ubuntu-latest
@@ -86,7 +87,9 @@ jobs:
           path: |
             contracts/cache
             contracts/out
-          key: foundry-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          # foundry.toml now lives at the monorepo root (not contracts/) —
+          # hashFiles() paths are always relative to GITHUB_WORKSPACE root.
+          key: foundry-${{ runner.os }}-${{ hashFiles('foundry.toml', 'contracts/lib/**') }}
           restore-keys: |
             foundry-${{ runner.os }}-
 
@@ -94,7 +97,7 @@ jobs:
         run: forge install
 
       - name: Run unit tests
-        run: forge test -vvv --no-match-path "test/fork/**"
+        run: forge test -vvv --no-match-path "contracts/test/fork/**"
 
   # ---------------------------------------------------------------------
   # Expensive job: forks mainnet via a paid RPC. Only runs when
@@ -135,7 +138,9 @@ jobs:
             ~/.foundry/cache/rpc
             contracts/cache
             contracts/out
-          key: foundry-fork-${{ runner.os }}-${{ hashFiles('contracts/foundry.toml', 'contracts/lib/**') }}
+          # foundry.toml now lives at the monorepo root (not contracts/) —
+          # hashFiles() paths are always relative to GITHUB_WORKSPACE root.
+          key: foundry-fork-${{ runner.os }}-${{ hashFiles('foundry.toml', 'contracts/lib/**') }}
           restore-keys: |
             foundry-fork-${{ runner.os }}-
 
@@ -143,6 +148,6 @@ jobs:
         run: forge install
 
       - name: Run fork tests
-        run: forge test -vvv --match-path "test/fork/**"
+        run: forge test -vvv --match-path "contracts/test/fork/**"
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
