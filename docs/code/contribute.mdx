@@ -4,27 +4,32 @@ description: "Add your grain of sand"
 icon: "point"
 ---
 
-### Making changes
+The project was created during a hackathon, so we don't yet have a complete infrastructure to make contributing smooth. BUT! There is an open [issue](ISSUE_LINK) to build such a system.
 
-The project was created during a hackathon, so we don't yet have a complete infrastructure to make the contribution smooth. BUT ! There is an open [issue](ISSUE_LINK) to build such a system.
+In the meantime, we still try to follow [Conventional Commits](CONVENTIONAL_COMMITS_LINK).
 
-In the meantime, we still try to follow [Conventional Commits](CONVENTIONAL_COMMITS_LINK). Before creating a Pull Request, enable the Git hook that validates commit messages:
+Before creating a Pull Request, enable the Git hook that validates commit messages:
 
 ```bash
 git config core.hooksPath .githooks
 chmod +x .githooks/commit-msg
 ```
 
-After that, commit messages will be checked automatically.
+After that, your commit messages will be checked automatically.
+
+### Keep commit messages consistent
+
+```text
+feat: add dynamic fee calculation
+fix(hook): handle empty swap window
+docs: improve deployment guide
+test: add beforeSwap coverage
+```
 
 ### Keep things atomic
 
 Please pay special attention to the **atomicity of libraries and their tests**. We want to make it as easy as possible for the open-source community to improve individual parts of the project without having to understand or modify everything else.
 
-**Atomicity is everything.**
+**Now read the [Getting Started](/getting-started) guide.** It covers installation and how to run the project locally.
 
 Thanks for your attention and for contributing! 🎉
-
-<Note>
-  P. S. now read the [Getting Started](/getting-started) guide - it covers installation and how to run the project locally. 
-</Note>
