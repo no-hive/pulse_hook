@@ -55,7 +55,7 @@ jobs:
         run: forge install
 
       - name: Run coverage
-        run: forge coverage --report summary | tee coverage.txt
+        run: forge coverage --report summary --match-path 'src/**/*.sol' | tee coverage.txt
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
 
