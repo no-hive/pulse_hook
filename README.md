@@ -14,7 +14,7 @@ This hook is build to solve MEV problem for pools with low liquidity - perfect r
 
 🧬 _No external off-chain modules or oracles. Runs entirely on-chain._
 
-> _inspired by [Uniswap v4 Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) and [median-oracles by saucepoint](github.com/saucepoint/median-oracles)_
+> _inspired by [Uniswap v4 Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) and [median-oracles by saucepoint](https://github.com/saucepoint/median-oracles)_
 
 
 ## What Pulse Hook does
@@ -39,7 +39,7 @@ This hook is build to solve MEV problem for pools with low liquidity - perfect r
 ## Build with the hook
 
 
-#### 🍇 [INIT POOL](https://pulse-hook.mintlify.site/guides/overview2) - find how to deploy a pool with a hook here.
-#### ⚗️ [DELPOY HOOK](https://pulse-hook.mintlify.site/guides/overview3) - see how to install the hook to check it, judge it, modify it, deploy it.
+#### 🍇 [INIT POOL](https://pulse-hook.mintlify.site/guides/overview-2) - find how to deploy a pool with a hook here.
+#### ⚗️ [DELPOY HOOK](https://pulse-hook.mintlify.site/guides/overview-3) - see how to install the hook to check it, judge it, modify it, deploy it.
 
 
