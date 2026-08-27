@@ -4,7 +4,7 @@ description: "Deploy the Pulse Hook to any network"
 icon: "point"
 ---
 
-**Deploying the Pulse Hook is fully automated by the deployment script. You do not need to manually calculate hook addresses or find CREATE2 salts.**
+**-Deploying the Pulse Hook is fully automated by the deployment script. You do not need to manually calculate hook addresses or find CREATE2 salts.**
 
 ## 1. Clone the repository
 
@@ -46,9 +46,9 @@ cp .env.example .env
 
 Set the following values:
 
-- `RPC_URL` — RPC endpoint for the network you want to deploy to.
-- `PRIVATE_KEY` — private key of the deploying wallet.
-- `WALLET_ADDRESS` — address corresponding to `PRIVATE_KEY`.
+- `RPC_URL` - RPC endpoint for the network you want to deploy to.
+- `PRIVATE_KEY` - private key of the deploying wallet.
+- `WALLET_ADDRESS` - address corresponding to `PRIVATE_KEY`.
 
 > **Security:** Never commit `.env` or expose your private key. For deployments, use a dedicated wallet with only the funds required for gas.
 

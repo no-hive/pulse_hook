@@ -38,22 +38,18 @@ At the same time, the mechanism adapts to network-wide demand. If priority fees 
 
 **Pulse Hook is a short name of Priority Fee Pulse Hook - the mechanism to listen to the pulse of the chain, creating a defense layer against MEV bots.**
 
-<Frame>
-  The dynamic fee described above is applied to every swap on every pool that uses this hook. Whitelisting (below) does not turn the fee off for a pool — it only controls whether that pool's swaps are allowed to influence the shared median.
-</Frame>
-
 # Hook Features
 
 <Card title="Priority Fee Median" color="#FF00F6" icon="chart-bar">
-  The main low-gas mechanism to keep up with pools activity pulse. Updates quite quickly as it is algorithmic median built using Frugal2U approach. Results in 15-blocks snapshots that keeps it even more effective.
+  The main low-gas mechanism to keep up with pools activity pulse. Updates quite quickly as it is algorithmic median built using Frugal2U approach. Results in 15-blocks snapshots that keeps it even more effective and protective.
 </Card>
 
 <Card title="Dynamic Fees 1.5x Curve" color="#FF00F6" icon="coins">
-  Keep the fees low for real users and high for MEV bots. Use specially created curve to punish only those who deserve it.
+  Keep the fees low for real users and high for MEV bots. The fees are up to specially created curve witр разгон при большем выходе.
 </Card>
 
-<Card title="Dust Attacks Double Protection" color="#FF00F6" icon="device-vision-pro">
-  The hook has a chain-specific whitelist of chain core tokens, set at deploy time. A pool is marked as registered **once, when it is created**, based on whether either of its two tokens is on that whitelist — this is not re-checked on every swap. Only registered pools' swaps are allowed to update the shared Median. The second defense layer is the Tick Moves Tracker: even on a registered pool, a swap only updates the Median if the pool's price has moved meaningfully since the last accepted update, which also helps avoid small (dust) transactions aimed at moving the Median.
+<Card title="Dust Attacks Double Protection " color="#FF00F6" icon="device-vision-pro">
+  The hook whitelists 'sound' tokens. (USDС, WETH, etc.) Only pools that have at least one whitelisted token can update the Median. Also the Tick Tracker lets updates pass only on meaningful price movement, preventing dust-based manipulation.
 </Card>
 
 <Frame>
@@ -70,7 +66,7 @@ At the same time, the mechanism adapts to network-wide demand. If priority fees 
   </Column>
   <Column>
     <Card title="Deploy Hook" color="#FF00F6" icon="rocket" href="https://app.mintlify.com/mpf-hook/pulse-hook/~/0cace275-51c3-43c8-bd4c-91fa7ab735f1">
-      You can copy this hook, modify it and deploy wherever your want. This hook is MIT-licensed. Note: the constructor's listed-token array is only read once at deploy time and tolerates up to two zero-address entries before it reverts — double-check your token list before deploying.
+      Copy this hook, modify it and deploy any custom version. (this hook is MIT-licensed, do what you want!)
     </Card>
   </Column>
 </Columns>

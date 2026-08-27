@@ -5,10 +5,6 @@ icon: "point"
 sidebarTitle: "E2E Flow"
 ---
 
-<Frame>
-  _If you somehow find this docs without knowing what Uniswap v4 hook is, check this link._
-</Frame>
-
 The Priority Fee Hook adjusts trading fees based on how aggressively a swap is bidding for fast inclusion, and keeps its internal reference measurement resistant to manipulation.
 
 **Here you can find End-to-end flow executed when a swap reaches Pulse Hook:**
@@ -27,21 +23,21 @@ The Priority Fee Hook adjusts trading fees based on how aggressively a swap is b
     If the swap's priority fee is significantly higher than typical (for example, several times above average), the hook applies an additional trading fee on top of the baseline. Refer to Penalty Curve for detailed Math.
   </Step>
   <Step title="Swap Executes with Applied Fee">
-    The swap is executed by the pool as normal. The extra fee collected goes to liquidity providers as usual. **This fee logic applies to every swap on every pool using this hook** — it does not depend on whether the pool is whitelisted (see next steps). Whitelisting only affects whether this swap is allowed to influence the reference measurement, not whether the fee itself is charged.
+    The swap is executed by the pool as normal. The extra fee collected goes to liquidity providers as usual. **This fee logic applies to every swap on every pool using this hook** - it does not depend on whether the pool is whitelisted (see next steps). Whitelisting only affects whether this swap is allowed to influence the reference measurement, not whether the fee itself is charged.
   </Step>
   <Step title="Checking if the Pool is Whitelisted">
-    Whether a pool is allowed to feed the shared median at all is decided **once, at pool creation** — not per swap. When the pool is initialized, the hook checks if either of its two tokens is on the chain-specific whitelist, and stores that result as the pool's registration status. Only swaps on a registered pool can go on to update the median (see next steps); swaps on a non-registered pool never affect it, no matter how large their priority fee is.
+    Whether a pool is allowed to feed the shared median at all is decided **once, at pool creation** - not per swap. When the pool is initialized, the hook checks if either of its two tokens is on the chain-specific whitelist, and stores that result as the pool's registration status. Only swaps on a registered pool can go on to update the median (see next steps); swaps on a non-registered pool never affect it, no matter how large their priority fee is.
   </Step>
   <Step title="Checking Post-Swap Price Movement">
-    For registered pools only, after the swap completes the hook checks how much the pool's price actually moved as a result of this swap. How much price movement counts as "meaningful" is not fixed — it automatically adjusts based on how much liquidity is currently available in the pool.
+    For registered pools only, after the swap completes the hook checks how much the pool's price actually moved as a result of this swap. How much price movement counts as "meaningful" is not fixed - it automatically adjusts based on how much liquidity is currently available in the pool.
   </Step>
   <Step title="Updating the Measurement">
-    Meaningful Movement Required to Update. The hook only updates its internal "typical priority fee" measurement if the pool is registered (whitelisted at creation) AND the price moved by a meaningful amount for the current liquidity level.
+    Meaningful Movement Required to Update. The hook only updates its internal "typical priority fee" measurement if the swap passed both checks (STEP 6 and STEP 7).
   </Step>
 </Steps>
 
 <Frame>
-  The whitelist and tick-movement checks ensure no dust swaps, and no swap on a non-whitelisted pool, can move the Median. It is extremely important because the Median is shared by all pools on the chain. Read here why it is built in such way. Note that these checks only gate whether the _median_ gets updated — the dynamic fee itself (steps 1-5) is still computed and applied on every swap, on every pool, regardless of registration status.
+  The whitelist and tick-movement checks ensure no dust swaps, and no swap on a non-whitelisted pool, can move the Median. It is extremely important because the Median is shared by all pools on the chain.
 </Frame>
 
 **That's it!**
@@ -52,6 +48,6 @@ The Priority Fee Hook adjusts trading fees based on how aggressively a swap is b
 
 The hook emits three events so downstream tools don't need to trace or run an archive node:
 
-- **`PoolRegistered(id, registered)`** — emitted once, in `afterInitialize`, with the pool's whitelist result described above.
-- **`FeeApplied(id, fee, priorityFee, referenceMedian)`** — emitted on every swap (`beforeSwap`), regardless of whitelist status, letting anyone reconstruct which swaps were penalized and by how much.
-- **`MedianUpdated(id, newMedian, step, positive)`** — emitted only when a swap actually updates the running median (i.e. only for registered pools that passed the tick-movement check).
+- `PoolRegistered(id, registered)` - emitted once, in `afterInitialize`, with the pool's whitelist result described above.
+- `FeeApplied(id, fee, priorityFee, referenceMedian)` - emitted on every swap (`beforeSwap`), regardless of whitelist status, letting anyone reconstruct which swaps were penalized and by how much.
+- `MedianUpdated(id, newMedian, step, positive)` - emitted only when a swap actually updates the running median (i.e. only for registered pools that passed the tick-movement check).

@@ -16,8 +16,8 @@ Every time a new priority fee comes in:
 - If the new value is **bigger** than the current estimate, the estimate moves **up** by `step`.
 - If it is **smaller**, the estimate moves **down** by `step`.
 - `step` is not fixed. It **grows** while the moves keep going the same direction (roughly 1% of the value per iteration, via `stepIncrement`), so the estimate speeds up when it needs to catch up.
-- As soon as the direction **flips**, `step` is reset to 1. That's a brake against overshooting and bouncing back and forth.
-- If a move would jump past `newNumber`, the estimate is clamped to `newNumber` and the leftover `step` is corrected (see `// line 6` and `// line 18` in the code).
+- As soon as the direction **flips**, `step` is decremented by `stepIncrement` and, if it would still be above 1 after that, it's force-clamped down to exactly 1. In practice this means `step` ends up small right after a flip — usually 1, but it can also land on a small negative value (see transaction #16 in the worked example below, where `step` comes out as `-1`). Either way, it acts as a brake against overshooting and bouncing back and forth.
+- If a move would jump past `newNumber`, the estimate is clamped to `newNumber` and the leftover `step` is corrected — this happens in the overshoot-correction block of `updateApproxMedian`, one mirrored version for each direction (upward and downward).
 
 ## Why convergence is quadratic
 
@@ -25,7 +25,7 @@ Because `step` accumulates instead of resetting each time, a sustained run in on
 
 ## Why it resists outliers
 
-Because each step is small (~1% of the value) and the direction-flip resets `step` back to 1, **one huge spike barely moves the estimate**. It creeps toward the outlier instead of jumping to it. This is what makes `approxMedian` resistant to attacks like "spam a batch of high-tip swaps to yank the median." `MPFHook` adds two more layers on top of this — see [Snapshots and update gating](#snapshots-and-update-gating) below.
+Because each step is small (~1% of the value) and a direction flip immediately shrinks `step` back down, **one huge spike barely moves the estimate**. It creeps toward the outlier instead of jumping to it. This is what makes `approxMedian` resistant to attacks like "spam a batch of high-tip swaps to yank the median." `PulseHook` adds two more layers on top of this — see [Snapshots and update gating](#snapshots-and-update-gating) below.
 
 ## Example with 20 transactions
 
@@ -64,12 +64,12 @@ _(direction: "up" means `positive = true` after this step, "down" means `positiv
 
 1. **Fast start (tx 1-7).** `approxMedian` starts at 0 and catches up to the real level (~10-11) in about 5-6 same-direction steps. That's the quadratic convergence from the growing `step`.
 2. **Outlier at tx 8 (300 gwei).** The real median barely moves (11 → 11.5) and `approxMedian` only moves by its current `step` of 5, from 12 to 17. It does **not** jump to 300.
-3. **Quick correction (tx 9-11).** As soon as the next value (11) is below the estimate again, `step` resets to 1, direction flips, and the estimate settles back into the 9-13 range.
-4. **Steady state (tx 12-20).** After the transient, `approxMedian` stays in a tight 10-12 band, matching the real rolling median (~11), even through a second outlier (250 at tx 16).
+3. **Quick correction (tx 9-11).** As soon as the next value (11) is below the estimate again, `step` shrinks and the direction flips, and the estimate settles back into the 9-13 range.
+4. **Steady state (tx 12-20).** After the transient, `approxMedian` stays in a tight 10-12 band, matching the real rolling median (~11), even through a second outlier (250 at tx 16) — note how `step` at tx 16 lands on `-1` rather than a flat `1`, exactly the "small, not always exactly 1" behavior described above.
 
 ## Snapshots and update gating
 
-`MPFHook` doesn't feed the fee formula from the live `approxMedian` directly. Two extra layers sit on top, both meant to stop an attacker from moving the reference value within a single block.
+`PulseHook` doesn't feed the fee formula from the live `approxMedian` directly. Two extra layers sit on top, both meant to stop an attacker from moving the reference value within a single block.
 
 ### One snapshot per block
 
@@ -83,7 +83,15 @@ _(direction: "up" means `positive = true` after this step, "down" means `positiv
 - How far is "far enough" scales with the pool's liquidity, roughly `~sqrt(REFERENCE_LIQUIDITY / liquidity)`: a shallow pool needs a bigger tick move (a small trade can swing it cheaply), a deep pool needs a smaller one (moving its price is already expensive).
 - This keeps a burst of same-price or dust swaps from nudging the median with no real price movement behind them.
 
-Together, these two layers mean an attacker has to actually move the pool's price *and* sustain that over multiple blocks just to shift the value the dynamic fee reacts to.
+Together, these two layers mean an attacker has to actually move the pool's price _and_ sustain that over multiple blocks just to shift the value the dynamic fee reacts to.
+
+<Frame>
+  The exact snapshot-window size and the liquidity-scaling formula for "far enough" live in `SnapshotWindowLibrary` and `TickCheckerLibrary`, which aren't covered by this page's source review — treat the `15` and the `sqrt(REFERENCE_LIQUIDITY / liquidity)` figures above as documentation, not independently verified against those libraries.
+</Frame>
+
+## Batch helper
+
+`FrugalMedianLibrary` also exposes `frugalMedian(int256[] memory sequence)`, which folds `updateApproxMedian` over a whole sequence at once starting from a fresh estimator. `PulseHook` itself never calls this in its per-swap flow — it always feeds one observation at a time — this helper exists for tests and off-chain backfills.
 
 ## Key takeaway
 
@@ -92,4 +100,4 @@ Together, these two layers mean an attacker has to actually move the pool's pric
 - converges to the real value in about 10-15 same-direction updates, and
 - mostly ignores single outliers thanks to the small step size and the direction-flip reset.
 
-That's what makes it a good basis for `referenceMedian` in `MPFHook`, especially with the snapshotting and update-gating layered on top (see above).
+That's what makes it a good basis for `referenceMedian` in `PulseHook`, especially with the snapshotting and update-gating layered on top (see above).

@@ -1,10 +1,11 @@
 ---
 title: "Penalty Curve"
+description: "Penalty-curve model and its role in Hook calculations"
 icon: "point"
 sidebarTitle: "Penalty Curve"
 ---
 
-Penalty-curve model enables dynamic fees in step 5. It is the part where MEV bots really receive what they deserve.
+Penalty-curve model enables the dynamic fee used in the _Penalty for Excessive Fee-Bidding_ step of the [E2E flow](/overview/e2e-flow). It is the part where MEV bots really receive what they deserve.
 
 The hook charges every swap a small baseline fee (0.1%), plus an extra penalty if the swap's priority fee is unusually high compared to the recent reference median. The penalty only kicks in past a threshold, then grows smoothly up to a hard cap.
 
@@ -46,15 +47,15 @@ We can see it is 1.5 curve that has delayed start and has a strict 10% penalty c
 ## Design questions
 
 <Card title="Why is the basic fee 0.1%?">
-  2
+  This hook is built for low-liquidity pools — launchpads, meme coins, creator tokens. 0.1% is roughly the market standard there; go lower and LPs stop earning enough to bother providing liquidity.
 </Card>
 
 <Card title="Why does the penalty start only from 2.7x?">
-  1
+  We didn't want to punish real users. Even people who pick "fast" in their wallet rarely go above ~3x the typical priority fee. So the curve starts at 2.7x — the penalty only really kicks in once you're past what a normal user would ever pay.
 </Card>
 
 <Card title="Why is the cap 10%?">
-  3
+  Sandwich attacks need two transactions, so a 10% cap becomes ~20% across the attack — more than enough to kill the profit. We capped it rather than let it grow uncapped so a swap can never eat a user's (or bot's) entire amount. It's the sweet spot between real deterrence and not being punitive.
 </Card>
 
 ## The formula
@@ -88,7 +89,7 @@ and `sqrt` is cheap on-chain via `Math.sqrt`. So the whole curve costs one multi
 | `PRECISION` | 1000 | Fixed-point scale for the ratio (`1000` = 1.0x) |
 | `WAD` | 1e18 | Fixed-point scale for the `frac^1.5` calculation |
 | `RATIO_THRESHOLD` | 2700 | Penalty starts at 2.7x the reference median |
-| `D_CAP` | 7300 | Width of the penalty range; penalty saturates at `2.7x + 7.3 = 10.0x` |
+| `PENALTY_RANGE_WIDTH` | 7300 | Width of the penalty range; penalty saturates at `2.7x + 7.3 = 10.0x` |
 | `BASIC_FEE` | 1000 ppm | Baseline fee, 0.1%, always charged |
 | `MAX_PENALTY_PERCENT` | 10 | Hard cap on the penalty, reached exactly at 10x |
 | `PENALTY_UNIT` | 10000 | Converts a plain percent into ppm (1% = 10,000 ppm) |
@@ -100,19 +101,20 @@ and `sqrt` is cheap on-chain via `Math.sqrt`. So the whole curve costs one multi
 | `r` (scaled by 1000) | `priorityFeeRatioScaled` |
 | `2.7` threshold | `RATIO_THRESHOLD = 2700` |
 | `r - 2.7` | `excessRatioScaled` |
-| `7.3` saturation range | `D_CAP = 7300` |
+| `7.3` saturation range | `PENALTY_RANGE_WIDTH = 7300` |
 | `f(r)`, in WAD | `fracWad` |
 | `sqrt(f(r))` | `sqrtFracWad` |
 | `f(r)^1.5 = f(r) * sqrt(f(r))` | `frac1_5Wad` |
 | `10% * f(r)^1.5`, in ppm | `penaltyPpm` |
 | `fee` | `totalFee` |
+| final downcast to `uint24` | `.toUint24()`, via OpenZeppelin's `SafeCast` |
 
 ### How this looks in the code
 
 All fixed-point math here uses two scales: `PRECISION = 1000` for the ratio (so `2700` means "2.7x"), and `WAD = 1e18` for the fractional-exponent part.
 
 ```solidity
-function getDynamicFee_(uint256 priorityFee, int256 referenceMedian) internal virtual returns (uint24) {
+function _getDynamicFee(uint256 priorityFee, int256 referenceMedian) internal pure returns (uint24) {
     // No reference data yet, fall back to the baseline fee to avoid
     // dividing by zero (mirrors the old medianPriorityFee == 0 check).
     if (referenceMedian <= 0) return BASIC_FEE;
@@ -134,12 +136,13 @@ function getDynamicFee_(uint256 priorityFee, int256 referenceMedian) internal vi
         // excess of 1.0 * PRECISION).
         uint256 excessRatioScaled = priorityFeeRatioScaled - RATIO_THRESHOLD;
 
-        // Fraction of the way through the penalty range [0, D_CAP],
+        // Fraction of the way through the penalty range [0, PENALTY_RANGE_WIDTH],
         // expressed in WAD (1e18 = "fully saturated"). Clamped to
-        // WAD instead of computed further once excess reaches D_CAP,
+        // WAD instead of computed further once excess reaches PENALTY_RANGE_WIDTH,
         // both to save gas and to guarantee no overflow regardless
         // of how large priorityFeeRatioScaled is.
-        uint256 fracWad = excessRatioScaled >= D_CAP ? WAD : (excessRatioScaled * WAD) / D_CAP;
+        uint256 fracWad =
+            excessRatioScaled >= PENALTY_RANGE_WIDTH ? WAD : (excessRatioScaled * WAD) / PENALTY_RANGE_WIDTH;
 
         // frac^1.5 = frac * sqrt(frac), computed in WAD fixed point.
         // Math.sqrt(fracWad * WAD) rescales sqrt(x/1e18) back to a
@@ -159,8 +162,8 @@ function getDynamicFee_(uint256 priorityFee, int256 referenceMedian) internal vi
 
 ### Notes
 
-- **`M` (reference median)** is a smoothed value, not the live running median directly — see [link] for how it's derived.
-- **Edge case:** if `referenceMedian <= 0` (no data yet), `getDynamicFee_` returns `BASIC_FEE` directly, skipping the ratio/penalty calculation to avoid division by zero.
+- **`M` (reference median)** is a smoothed value, not the live running median directly — see [Priority Fee Median](/overview/frugal2u-median) for how it's derived.
+- **Edge case:** if `referenceMedian <= 0` (no data yet), `_getDynamicFee` returns `BASIC_FEE` directly, skipping the ratio/penalty calculation to avoid division by zero.
 
 ## Key takeaway
 
