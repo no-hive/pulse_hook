@@ -20,7 +20,7 @@ The Priority Fee Hook adjusts trading fees based on how aggressively a swap is b
     If the swap's priority fee is reasonably close to the typical level, no extra fee is applied. Basic fee of 0.1% is the only fee to pay.
   </Step>
   <Step title="Penalty for Excessive Fee-Bidding">
-    If the swap's priority fee is significantly higher than typical (for example, several times above average), the hook applies an additional trading fee on top of the baseline. Refer to Penalty Curve for detailed Math.
+    If the swap's priority fee is significantly higher than typical (for example, several times above average), the hook applies an additional trading fee on top of the baseline. Refer to [Penalty Curve](/math/penalty-curve)  for detailed Math
   </Step>
   <Step title="Swap Executes with Applied Fee">
     The swap is executed by the pool as normal. The extra fee collected goes to liquidity providers as usual. **This fee logic applies to every swap on every pool using this hook** - it does not depend on whether the pool is whitelisted (see next steps). Whitelisting only affects whether this swap is allowed to influence the reference measurement, not whether the fee itself is charged.
@@ -42,7 +42,7 @@ The Priority Fee Hook adjusts trading fees based on how aggressively a swap is b
 
 **That's it!**
 
-**Even if the code structure looks complicated, it does just quite a few things and changes nothing but the swap dynamic fee. So that's why it is important that pool created also has dynamic fees enabled. Read how to deploy your hook here.**
+**Even if the code structure looks complicated, it does just quite a few things and changes nothing but the swap dynamic fee. So that's why it is important that pool created also has dynamic fees enabled. Read how to** [Deploy Hook ](/guides/overview-2)**here.**
 
 ## On-chain events for indexers / frontends
 

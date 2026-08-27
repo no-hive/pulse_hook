@@ -162,7 +162,7 @@ function _getDynamicFee(uint256 priorityFee, int256 referenceMedian) internal pu
 
 ### Notes
 
-- **`M` (reference median)** is a smoothed value, not the live running median directly — see [Priority Fee Median](/overview/frugal2u-median) for how it's derived.
+- **`M` (reference median)** is a smoothed value, not the live running median directly — see [Priority Fee Median](https://pulse-hook.mintlify.site/math/frugal2u-median) for how it's derived.
 - **Edge case:** if `referenceMedian <= 0` (no data yet), `_getDynamicFee` returns `BASIC_FEE` directly, skipping the ratio/penalty calculation to avoid division by zero.
 
 ## Key takeaway
