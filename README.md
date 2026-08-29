@@ -39,7 +39,7 @@ This hook is build to solve MEV problem for pools with low liquidity - perfect r
 ## Build with the hook
 
 
-#### 🍇 [INIT POOL](https://pulse-hook.mintlify.site/guides/overview-3) - find how to deploy a pool with a hook here.
-#### ⚗️ [DELPOY HOOK](https://pulse-hook.mintlify.site/guides/overview-2) - see how to install the hook to check it, judge it, modify it, deploy it.
+#### 🍇 [INIT POOL](https://pulse-hook.mintlify.site/guides/init-pool) - find how to deploy a pool with a hook here.
+#### ⚗️ [DELPOY HOOK](https://pulse-hook.mintlify.site/guides/deploy-hook) - see how to install the hook to check it, judge it, modify it, deploy it.
 
 

@@ -47,8 +47,8 @@
             "icon": "book",
             "pages": [
               "guides/overview",
-              "guides/overview-3",
-              "guides/overview-2"
+              "guides/init-pool",
+              "guides/deploy-hook"
             ]
           }
         ]
