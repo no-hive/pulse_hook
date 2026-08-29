@@ -1,0 +1,522 @@
+# LLM Context: Pulse Hook
+
+> Drop this whole file into any LLM chat to give it full context on this project before asking questions, requesting code, or discussing changes.
+
+> **Source of truth & freshness:** this file is a snapshot as of **August 29, 2026**, built from the `PulseHook.sol` source and the project's docs as they stood on that date. Code and docs will keep changing after this. If anything here conflicts with the live repo or docs site, **the repo wins** — check [`src/`](https://github.com/no-hive/pulse_hook/tree/main/src), [`test/`](https://github.com/no-hive/pulse_hook/tree/main/test), and the [docs site](https://pulse-hook.mintlify.site) directly. This file is a summary, not a replacement for the source: for anything precision-critical — exact gas costs, exact line numbers, current parameter values, current deployed addresses — read the actual code/docs rather than relying on the prose here.
+
+## Quick Facts
+
+| | |
+|---|---|
+| Base swap fee | 0.1% |
+| Penalty threshold | 2.7x the reference median priority fee — below this, no penalty (Section 4.2) |
+| Penalty cap | 10%, reached at 10x the reference median (Section 4.2) |
+| Median snapshot window | 15 blocks (Section 4.1) |
+| License | MIT |
+| Deployed hook address | Network-specific, mined via CREATE2 at deploy time — no single canonical address across chains (Section 10.2) |
+| Main contract / Solidity version | `src/PulseHook.sol`, `pragma solidity ^0.8.26` |
+| Repo | https://github.com/no-hive/pulse_hook |
+
+## Table of Contents
+
+- [1. Project Type & Basics](#1-project-type--basics)
+- [2. Core Purpose & Goals](#2-core-purpose--goals)
+- [3. How It Works (End-to-End Swap Flow)](#3-how-it-works-end-to-end-swap-flow)
+- [4. Mathematical Design: What Was Chosen and Why](#4-mathematical-design-what-was-chosen-and-why)
+  - 4.1 Priority Fee Median — Frugal2U
+  - 4.2 Penalty Curve — `frac^1.5`
+- [5. Technical Structure](#5-technical-structure)
+- [6. Known Limitations](#6-known-limitations)
+- [7. Current State & Future Development](#7-current-state--future-development)
+- [8. Contributing & Conventions](#8-contributing--conventions)
+- [9. Role of the AI / How to Work With This Project](#9-role-of-the-ai--how-to-work-with-this-project)
+- [10. Deployment & Usage Guides](#10-deployment--usage-guides)
+  - 10.1 Init Pool — use an already-deployed hook
+  - 10.2 Deploy Hook — deploy your own copy
+- [11. Useful Prompt Templates](#11-useful-prompt-templates)
+
+---
+
+## 1. Project Type & Basics
+
+### Background: Uniswap v4 & hooks (general knowledge, not Pulse-Hook-specific)
+
+- **Uniswap v4** is a rewrite of the Uniswap AMM built around a **singleton `PoolManager` contract** — all pools live inside one contract instead of each pool being its own deployed contract (as in v3). This makes multi-pool operations (e.g. swaps across several pools) far cheaper, since state is co-located and moved via **flash accounting** (net balances are settled once at the end of a transaction, instead of transferring tokens after every intermediate step). v4 also brought back **native ETH support** (no forced WETH wrapping) and made **fees fully dynamic** by default.
+- **Hooks** are the headline feature: external smart contracts a pool can attach to, which get called by the `PoolManager` at specific points in a pool's lifecycle — e.g. `beforeInitialize`/`afterInitialize` (pool creation), `beforeSwap`/`afterSwap`, `beforeAddLiquidity`/`afterAddLiquidity`, `beforeRemoveLiquidity`/`afterRemoveLiquidity`. A hook can read/modify swap parameters, charge custom dynamic fees, block an action, or emit custom data — enabling things like on-chain limit orders, TWAP oracles, custom AMM curves, or (as here) MEV-resistant dynamic fees, all without modifying the core protocol.
+- **A pool "has" a hook** by including the hook's contract address in its `PoolKey` at creation. A pool with the zero address as its hook behaves like a vanilla v3-style pool (no hook logic).
+- **Hook permissions are encoded in the hook's own contract address**, not stored separately — specific bits of the address determine which callback functions (`beforeSwap`, `afterInitialize`, etc.) are active for that hook. This is why hooks are deployed via **CREATE2 with a mined salt**: the deployer has to find a salt that produces an address with the right bit pattern for the permissions the hook needs. (This is what Pulse Hook's deployment script automates — see Section 10.2, step 6 — so nobody has to mine the salt by hand.)
+- **Dynamic fees** are a pool-level flag (`LPFeeLibrary.DYNAMIC_FEE_FLAG`) set at pool creation; when enabled, the pool's swap fee is decided per-swap by the hook's `beforeSwap` return value instead of being fixed at pool creation. Pulse Hook requires this flag — see Section 10.1.
+
+### Pulse Hook basics
+
+- **Type:** Uniswap v4 Hook (standalone smart contract)
+- **Full name:** Priority Fee Pulse Hook ("Pulse Hook" for short)
+- **Main contract:** `src/PulseHook.sol`
+- **Target protocol:** Uniswap v4
+- **License:** MIT — free to copy, modify, and redeploy
+- **Origin:** Built during a hackathon
+- **Repo structure:** Monorepo — code, tests, and documentation all live in the same repository (see Section 5 for the full layout and why this matters for AI-assisted work)
+- **Repo:** https://github.com/no-hive/pulse_hook
+- **Docs site:** https://pulse-hook.mintlify.site
+- **Inspired by:** [Uniswap v4 Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) (the block-snapshot-window pattern — see Section 4.1) and [median-oracles by saucepoint](https://github.com/saucepoint/median-oracles) (on-chain median tracking for a hook)
+- **Key links:**
+  - Documentation: https://pulse-hook.mintlify.site/introduction
+  - LLM-facing docs / discuss with an AI agent: https://github.com/no-hive/pulse_hook/blob/main/llms/README.md
+  - Init a pool with the hook: https://pulse-hook.mintlify.site/guides/overview-3
+  - Deploy/modify the hook: https://pulse-hook.mintlify.site/guides/overview-2
+- **Hook permissions used** (per `getHookPermissions()` — only these three are `true`, everything else is `false`):
+  - `afterInitialize` — registers the pool (whitelist check) exactly once
+  - `beforeSwap` — reads priority fee, applies the dynamic fee, emits `FeeApplied`
+  - `afterSwap` — conditionally updates the running median (gated by the tick checker)
+  - (see Section 3 for the exact per-callback step order, and Section 5 for the full contract walkthrough)
+- **Pools it targets:** Any Uniswap v4 pool, but must have **dynamic fees enabled** at pool creation. Designed especially for low-liquidity pools on launchpads and creator-coin pools, where MEV/sandwich risk is highest.
+- **One-line pitch:** Pulse Hook resists MEV/sandwich attacks using 100% on-chain math — no oracles, no off-chain infra, no additional nodes. It penalizes swaps with abnormally high priority fees (the signature of MEV bots racing for inclusion) by charging them a higher dynamic swap fee, while staying cheap for normal users.
+
+### Creator
+
+- **Name / handle:** no-hive — self-described "Alien DeFi Engineer"
+- **Vision:** an Ethereum-powered society with decentralized governance and shared digital goods
+- **Skills:** Solidity, Noir, product, tech documentation, on-chain analytics, audits
+- **Focus areas:** sustainable DEXs, governance, public goods
+- **Links:** [GitHub](https://github.com/no-hive) · [Dune](https://dune.com/no__hive) · [Medium](https://medium.com/@no__hive) · [X](https://x.com/no__hive) · [Telegram](https://t.me/no_hive) · [Email](mailto:no-hive@tutamail.com)
+
+---
+
+## 2. Core Purpose & Goals
+
+**The problem:** Liquidity pools — especially low-liquidity ones on launchpads and for creator coins — are highly exposed to MEV, including sandwich attacks, where bots front-run regular users' transactions to extract profit at the expense of traders and LPs.
+
+**The approach:** Pulse Hook maintains a shared running median of gas priority fees across all connected (whitelisted) pools. When a swap's priority fee significantly exceeds this median, the hook applies an additional swap fee on top of the base fee. Sharp fee spikes (typical of MEV bots trying to jump the queue) become economically unattractive. The median itself adapts to network-wide conditions — if priority fees rise broadly (e.g. a bull market), the median rises too, and the extra penalty for normal users drops back down quickly.
+
+**Key priorities:**
+- 100% on-chain — no oracles, no off-chain services, no keepers, no additional infrastructure
+- Gas-efficient (uses a *frugal streaming* median estimator, not full history storage)
+- Deployable standalone on any network where Uniswap v4 exists
+- Only touches the swap's **dynamic fee** — no other pool behavior is modified
+
+**Explicit non-goals:**
+- Does **not** claim to fully eliminate MEV — see Known Limitations (Section 6)
+- Does **not** vet or endorse the tokens in any pool that deploys it
+- Does **not** attempt to prevent off-chain coordination between MEV actors and block/transaction-ordering parties
+
+---
+
+## 3. How It Works (End-to-End Swap Flow)
+
+Three `BaseHook` callbacks drive everything: `_afterInitialize` (once, at pool creation), `_beforeSwap` (every swap — decides the fee), `_afterSwap` (every swap — conditionally updates the median). Order below matches the actual code path.
+
+### At pool creation — `_afterInitialize`
+1. **Reject non-dynamic-fee pools** — if `key.fee` doesn't have the dynamic-fee flag set, the call **reverts** with `NotDynamicFee`. A pool can't be created with this hook unless Dynamic Fee is enabled — see Section 10.1.
+2. **Set the initial LP fee** to `PenaltyFeeLibrary.BASIC_FEE` (0.1%) via `poolManager.updateDynamicLPFee`.
+3. **Whitelist check → registration** — checks whether `token0` or `token1` is in `isListedToken` (the chain-specific "sound token" whitelist set once in the constructor — see Section 5). The result is written to `isRegisteredPool[id]` **permanently** — this is decided once, never re-evaluated per swap.
+4. Emits `PoolRegistered(id, registered)`.
+
+### On every swap, before it executes — `_beforeSwap`
+1. **Snapshot the live median once per block** — `snapshotState.recordIfNewBlock(medianState.approxMedian)` copies the current global `approxMedian` into the rolling window, but only on the first swap of a new block (no-op on every subsequent swap in that block).
+2. **Compute the smoothed reference** — `referenceMedian = snapshotState.average()`, the average of the last 15 snapshots (Section 4.1).
+3. **Read this swap's priority fee** via `GetPriorityFeeLibrary.getPriorityFee()`.
+4. **Compute the dynamic fee** — `PenaltyFeeLibrary._getDynamicFee(priorityFee, referenceMedian)` (Section 4.2).
+5. Emits `FeeApplied(id, fee, priorityFee, referenceMedian)`, then returns the fee **OR-ed with `LPFeeLibrary.OVERRIDE_FEE_FLAG`** so `PoolManager` uses it instead of the pool's stored fee.
+
+**This runs for every swap on every pool using the hook — whitelisted or not.** Whether the pool is registered has no effect on this callback at all; it only matters in the next one.
+
+### On every swap, after it executes — `_afterSwap`
+1. **Skip entirely if the pool isn't registered** (`isRegisteredPool[id] == false` → nothing below runs).
+2. For registered pools: read the **post-swap** tick (`poolManager.getSlot0`) and current liquidity (`poolManager.getLiquidity`) — post-swap, since `_afterSwap` fires after the swap's price impact has already been applied.
+3. **Gate check** — `TickCheckerLibrary.movedEnoughToUpdate(id, currentTick, liquidity)` (Section 4.1). If the tick hasn't moved far enough since the last accepted update for this pool, stop here — no median update this swap.
+4. If the gate passes: **read the priority fee again** (a second, independent call to `GetPriorityFeeLibrary.getPriorityFee()` — the value read in `_beforeSwap` isn't reused/stored across the two callbacks) and feed it into `FrugalMedianLibrary.updateApproxMedian` via the internal `_updateMedian` adapter, overwriting `medianState`.
+5. Emits `MedianUpdated(id, newMedian, step, positive)`.
+
+**Why this matters:** the whitelist check (once, at creation) + the tick-movement gate (every swap, registered pools only) together mean no dust swap and no swap on a non-whitelisted pool can ever move the shared median — critical, since `medianState` is a **single global state shared across every pool** using this hook instance, not one median per pool.
+
+### On-chain events (for indexers/frontends)
+- `PoolRegistered(id, registered)` — emitted once, in `_afterInitialize`
+- `FeeApplied(id, fee, priorityFee, referenceMedian)` — emitted on every swap, in `_beforeSwap`, regardless of whitelist status
+- `MedianUpdated(id, newMedian, step, positive)` — emitted only when `_afterSwap` actually updates the median (registered pool + gate passed)
+
+---
+
+## 4. Mathematical Design: What Was Chosen and Why
+
+Two independent math problems sit inside Pulse Hook: **(4.1)** how to track a "typical" priority fee on-chain cheaply, and **(4.2)** how to turn "this swap's fee vs. that typical value" into an actual penalty. Both have deliberately chosen designs, picked over specific alternatives.
+
+### 4.1 Priority Fee Median — Frugal2U
+
+**The constraint:** an exact median needs to store and sort every past observation. On the EVM that means growing `SSTORE` costs, O(n log n) or O(n) gas per update for sorting, and no built-in way to "forget" old data. This doesn't fit on-chain execution — cost must stay **O(1) storage, O(1) gas per update**, regardless of history length. That narrows the field to streaming quantile estimators; the two real candidates were **P²** (Jain & Chlamtac, 1985) and **Frugal2U** (Ma, Muthukrishnan, Sandler, 2013).
+
+**P² vs. Frugal2U:**
+
+| | P² | Frugal2U |
+|---|---|---|
+| State | 5 markers: heights `q_0..q_4` + positions `n_0..n_4` (10 numbers) | 3 variables: `approxMedian`, `step`, `positive` |
+| Update | Parabolic/linear interpolation of marker positions on every observation | Simple move of the estimate by `step` toward the new value |
+| Cost per step | Higher — several comparisons + interpolation formula | Lower — a couple of additions/subtractions + one division |
+| Reaction to a level shift | Marker positions grow proportionally to total observations — carries "inertia" from history, adapts slowly. Built for **stationary** distributions | `step` grows on repeated same-direction moves and shrinks sharply on reversal — "forgets" the old level and re-adjusts fast |
+| Outlier resistance | Good on stationary data, but a sharp outlier still pulls markers, recovery slowed by history inertia | Good — each step capped (~1% of value), plus sharp shrink right after a direction flip |
+
+**Why Frugal2U was picked:** priority fee is **not a stationary signal** — it can sit at 1–2 gwei for hours then jump 10–50x within a couple of blocks (memecoin launch, liquidation cascade, NFT mint) and drop back just as fast. P² assumes a slowly-changing distribution, so a sudden regime shift causes lag exactly when adaptiveness matters most. Frugal2U's accumulating-but-easily-reset `step` lets it chase a genuine trend fast and stop just as fast when it turns out to be a one-off spike — which is exactly the behavior priority fees need. It also wins on gas: 3 state variables + minimal arithmetic vs. P²'s 10 variables + interpolation, and that gap is paid on **every swap**.
+
+**How Frugal2U actually works** (implemented in `FrugalMedianLibrary`, adapted to Solidity integer math): tracks three state variables — `approxMedian`, `step`, `positive`. On each new priority fee observation:
+- If the new value is bigger than the estimate, the estimate moves **up** by `step`; if smaller, it moves **down** by `step`.
+- `step` is not fixed — it **grows** (~1% of the value per iteration, via `stepIncrement`) while moves keep going the same direction, so the estimate accelerates when catching up to a real level shift.
+- As soon as direction **flips**, `step` shrinks (decremented by `stepIncrement`, force-clamped to at most 1 if it would still be above that) — it can even land on a small negative value right after a flip. This acts as a brake against overshoot/oscillation.
+- If a move would overshoot past the new value, the estimate is clamped to it and the leftover `step` is corrected.
+
+This produces **quadratic convergence**: because `step` accumulates instead of resetting, total distance covered in a sustained run grows like n². Catching up to a big level jump takes ~14 consecutive same-direction steps (`sqrt(2 × 100)`, with `STEP_DIVISOR = 100`), not ~100 as a flat 1% step would need. It's also **outlier-resistant**: since each step is small (~1% of value) and a direction flip immediately shrinks `step`, a single huge spike barely moves the estimate — it creeps toward an outlier rather than jumping to it (verified in a 20-tx worked example with two injected 250–300 gwei spikes against a ~10–13 gwei baseline: the estimate moved by only its current `step`, not toward the spike).
+
+**Two extra layers sit on top of the live `approxMedian`** (the fee formula never reads it directly), both meant to stop an attacker from moving the reference within a single block:
+- **One snapshot per block** (`SnapshotWindowLibrary`) — on the first swap touching a registered pool in a new block, `approxMedian` is copied into a circular buffer of `SNAPSHOT_WINDOW = 15` slots (~15 blocks). This pattern is directly inspired by [Uniswap's Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) — one of the two projects credited as inspiration for Pulse Hook (the other being [median-oracles by saucepoint](https://github.com/saucepoint/median-oracles), on tracking an on-chain median from within a hook). Every other swap in that block is a no-op here. The value the fee formula actually uses (`referenceMedian`, i.e. `M`) is the **average of the last 15 snapshots** — shifting it takes several blocks of sustained effort, not a single burst of swaps.
+- **Update gating on real price movement** (`TickCheckerLibrary`) — the live `approxMedian` only updates when a swap moves the pool's tick far enough from the tick at the last accepted update. "Far enough" scales with pool liquidity, roughly `~sqrt(REFERENCE_LIQUIDITY / liquidity)`: shallow pools need a bigger move (cheap to swing), deep pools need a smaller one (already expensive to move). This stops dust/same-price swap bursts from nudging the median.
+
+Together: an attacker has to actually move the pool's price **and** sustain that over multiple blocks just to shift the value the dynamic fee reacts to.
+
+`FrugalMedianLibrary` also exposes a `frugalMedian(int256[] memory sequence)` batch helper — folds the update over a whole sequence at once. The hook itself never calls this in its per-swap flow (always feeds one observation at a time); it exists for tests and off-chain backfills.
+
+### 4.2 Penalty Curve — `frac^1.5`
+
+**The formula** (implemented in `PenaltyFeeLibrary`, using OpenZeppelin's `Math` library):
+
+```text
+r     = priority_fee / M                        // M = reference median priority fee
+f(r)  = min((r - 2.7) / 7.3, 1)                  // 2.7 = threshold, 7.3 = saturation range
+
+penalty(r) = 0                                   if r < 2.7
+penalty(r) = 10% * f(r)^1.5                      if r >= 2.7
+
+fee = 0.1% + penalty(r)                          // 0.1% = basic fee
+```
+
+| Ratio | Basic Fee | Penalty Part | Total Fee |
+|---|---|---|---|
+| ≤ 2.7x | 0.1% | 0% | 0.1% |
+| ~4–5x | 0.1% | ~1–2% | ~1.1–2.1% |
+| ~7x | 0.1% | ~3–5% | ~3.1–5.1% |
+| 10x | 0.1% | 10% (capped) | 10.1% |
+| 20x | 0.1% | 10% (capped) | 10.1% |
+
+**Constants:** `PRECISION = 1000` (ratio scale, 1000 = 1.0x) · `WAD = 1e18` (fixed-point scale for `frac^1.5`) · `RATIO_THRESHOLD = 2700` (2.7x) · `PENALTY_RANGE_WIDTH = 7300` (penalty saturates at 2.7 + 7.3 = 10.0x) · `BASIC_FEE = 1000 ppm` (0.1%) · `MAX_PENALTY_PERCENT = 10` (hard cap, reached exactly at 10x) · `PENALTY_UNIT = 10000` (percent → ppm).
+
+**Gas trick:** Solidity has no cheap general `pow` for fractional exponents, but `frac^1.5 = frac * frac^0.5 = frac * sqrt(frac)`, and `sqrt` is cheap via `Math.sqrt`. So the whole curve costs one multiplication and one integer square root — no fixed-point `ln`/`exp`/`pow` library needed. Edge case: if `referenceMedian <= 0` (no data yet), the function returns `BASIC_FEE` directly, skipping the ratio/penalty math to avoid division by zero.
+
+**Why these three constants, specifically:**
+- **0.1% basic fee** — the hook targets low-liquidity pools (launchpads, meme coins, creator tokens), where 0.1% is roughly the market standard. Lower, and LPs stop earning enough to bother providing liquidity.
+- **2.7x threshold** — chosen to not punish real users. Even wallet users who select "fast" gas rarely exceed ~3x the typical priority fee, so the penalty only kicks in once a swap is bidding past what a normal user would ever pay.
+- **10% cap** — sandwich attacks need two transactions, so a 10% cap becomes ~20% across the attack, enough to kill the profit. Capped (not left uncapped) so a swap can never eat a user's/bot's entire amount — the sweet spot between real deterrence and being punitive.
+
+**Alternatives considered and rejected** (none of these are implemented — reference only, for anyone forking the hook):
+
+| Curve | Formula | Why rejected |
+|---|---|---|
+| **Linear** (`frac^1`) | `penalty% = 10 * frac` | Too aggressive right at the threshold — a swap at 3.5x (barely over 2.7x, arguably an eager-but-honest bidder) already gets hit with 1.1%. Punishes "slightly aggressive but honest" traders almost as hard, proportionally, as genuine outliers — the opposite of the goal. |
+| **Quadratic** (`frac^2`) | `penalty% = 10 * frac^2` | Too forgiving early (4.5x → only 0.61%, barely a deterrent), then whips up sharply near the cap (8.5x → 6.31%, 9.5x → 8.68%) — a steep, hard-to-predict gradient exactly where users are most likely bidding competitively. This was actually the curve chosen during early brainstorming, but considered too harsh in that "danger zone." |
+| **Step zones** | `1% / 3% / 6% / 10%` across fixed ratio bands (2.7–4.7x / 4.7–6.7x / 6.7–8.7x / ≥8.7x) | Cheapest to compute (just comparisons, no `sqrt`), but creates **cliff edges** — a swap at 4.69x pays 1%, one at 4.71x (essentially the same tip) pays 3%. Invites gaming (bidders cluster just under each threshold) and produces very different fees for nearly identical swaps. |
+
+**Why `frac^1.5` won:** a target reference table was set first — ~1–2% penalty around 4–5x (mild deterrent for slightly-aggressive-but-plausibly-honest bidders), ~3–5% around 7x (real cost for clearly aggressive bidding), exactly 10% at 10x (hard cap). `frac^1.5` hits almost exactly these numbers — it sits between linear and quadratic: steeper than a straight line, gentler than a square, with no cliff edges. It's a deliberately chosen "penalty brutality" — a fork could swap in a different curve from the table above (or another one entirely) if a different aggressiveness is desired.
+
+---
+
+## 5. Technical Structure
+
+### Design philosophy
+The main hook contract (`PulseHook.sol`) is intentionally small — it holds all storage and orchestration logic but contains **no math itself**. All math lives in five separate, independently-testable libraries (Section 4 covers the reasoning behind two of them — the median and the penalty curve). This keeps modification of the hook from breaking core tested logic, and lets contributors rework a single unit without needing to understand the whole project.
+
+### Repository layout (it's a monorepo)
+
+Cloning the repo (`git clone https://github.com/no-hive/pulse_hook.git` — Section 10.2, step 1) gets you **everything in one place** — the code and documentation are not split across separate repos. Alongside `src/` and `test/`, the same clone also contains:
+- the documentation source (the Mintlify pages this context file was built from)
+- `llms/README.md` — the LLM-facing docs pointer (Section 1)
+- the deployment scripts and `HelperConfig` (Section 10.2)
+
+**Why this matters for AI-assisted work:** an agent (or you, working with one) operating inside a local clone has the implementation *and* its documentation sitting in the same working tree — no need to fetch docs from a separate source to cross-check behavior against what's documented, and a code change + its doc update can land in the same commit/PR. If you ask an AI to "implement X and update the docs," everything it needs is already checked out.
+
+### `src/` — file tree
+
+```text
+src/
+├── PulseHook.sol
+└── lib/
+    ├── FrugalMedianLibrary.sol
+    ├── PenaltyFeeLibrary.sol
+    ├── GetPriorityFeeLibrary.sol
+    ├── SnapshotWindowLibrary.sol
+    └── TickCheckerLibrary.sol
+```
+
+### `src/` — main code
+| File | Responsibility |
+|---|---|
+| `src/PulseHook.sol` | The Uniswap v4 hook itself. Holds all contract storage; orchestration only — feeds data into the libraries below, no math of its own. |
+| `src/lib/FrugalMedianLibrary.sol` | Pure math for a frugal-streaming *approximate* median estimator — tracks a running median of priority fees without storing full history. (Section 4.1) |
+| `src/lib/PenaltyFeeLibrary.sol` | Pure math for the penalty curve and its constants. Given a swap's priority fee + the reference median, returns the LP fee to charge. (Section 4.2) |
+| `src/lib/GetPriorityFeeLibrary.sol` | Reads the current tx's priority fee from `tx.gasprice` / `block.basefee`, floored at zero for legacy transactions. |
+| `src/lib/SnapshotWindowLibrary.sol` | Maintains a rolling per-block window of median snapshots and averages them — smooths out single-block manipulation before the fee decision. |
+| `src/lib/TickCheckerLibrary.sol` | Gates whether a swap can update the running median — requires the pool's tick to have moved enough (scaled by liquidity) since the last accepted update. |
+
+### `PulseHook.sol` — contract walkthrough
+
+**Inherits from `BaseHook`** (OpenZeppelin's `uniswap-hooks` package), which handles the low-level `IHooks` wiring; `PulseHook` only implements the callbacks it needs and `getHookPermissions()`.
+
+**Custom errors:**
+- `NotDynamicFee()` — thrown in `_afterInitialize` if the pool wasn't created with the dynamic-fee flag. Without it, the hook's fee logic could never run, so pool creation is rejected outright rather than silently doing nothing.
+- `TooManyZeroAddressTokens()` — thrown in the constructor if the `_listedTokens` array passed in contains **more than 2** zero-address (`address(0)`) entries. Worth knowing if you're building that array for a new network's `HelperConfig` config (Section 10.2).
+
+**Storage:**
+| Variable | Type | Notes |
+|---|---|---|
+| `medianState` | `MedianState { int256 approxMedian; int256 step; bool positive; }` — `public` | **Global, shared across every pool** using this hook instance — there is one median, not one per pool. Updated only from `_afterSwap`. |
+| `snapshotState` | `SnapshotWindowLibrary.State` — `private` | The 15-slot rolling snapshot window (Section 4.1). Private because a struct with a fixed-size array only auto-exposes its scalar members — explicit view functions are provided instead (below). |
+| `isRegisteredPool` | `mapping(PoolId => bool)` — `public` | Set once per pool in `_afterInitialize`, never changed after. |
+| `isListedToken` | `mapping(address => bool)` — `public` | The chain-specific "sound token" whitelist. **Set only in the constructor** — immutable after deployment; there's no admin function to add/remove listed tokens post-deploy. |
+| `tickCheckerState` | `TickCheckerLibrary.State` — `private` | Per-pool last-accepted-tick + baseline-set bookkeeping (Section 4.1). Also private for the same struct-of-mappings reason; explicit getters below. |
+
+**Constructor** — `constructor(IPoolManager _poolManager, address[] memory _listedTokens)`: marks every address in `_listedTokens` as `isListedToken[...] = true`, while counting zero-address entries and reverting with `TooManyZeroAddressTokens` if there are more than 2.
+
+**No admin, no pause, no upgrade path.** The contract imports nothing resembling `Ownable`, `Pausable`, or any proxy/upgrade pattern (confirmed directly from the `import` list in [`PulseHook.sol`](https://github.com/no-hive/pulse_hook/blob/main/src/PulseHook.sol)) — there is no owner, no admin role, and no function anywhere in the contract that can pause swaps, change fee parameters, or add/remove whitelisted tokens after deployment. The whitelist (`isListedToken`) is set exactly once, in the constructor, and is permanent from then on (see Storage table above). This is usually the first thing a reviewer/auditor checks, so it's worth stating explicitly rather than leaving it implicit: **once deployed, Pulse Hook's behavior cannot be changed by anyone, including its deployer.**
+
+**`getHookPermissions()`** — only three flags are `true`: `afterInitialize`, `beforeSwap`, `afterSwap`. Everything else (`beforeInitialize`, `*AddLiquidity`, `*RemoveLiquidity`, `*Donate`, all the `*ReturnDelta` flags) is `false`. This is the exact permission set that gets encoded into the hook's deployed address (Section 1 background) and what the deploy script mines a CREATE2 salt for.
+
+**View functions** (explicit getters for the private struct state, since Solidity's auto-generated getters don't reach into fixed-size arrays or mapping-inside-struct fields):
+`snapshotAt(i)` · `snapshotCount()` · `snapshotIndex()` · `snapshotLastBlock()` · `lastMedianUpdateTick(id)` · `tickBaselineSet(id)`
+
+**The three callbacks** (`_afterInitialize`, `_beforeSwap`, `_afterSwap`) are covered step-by-step in Section 3 — that section's ordering follows this file's actual code path.
+
+**`_updateMedian(uint256 currentPriorityFee)`** — the one internal "library adapter" function: called only from `_afterSwap`, after the gate has already passed. Delegates the actual math to `FrugalMedianLibrary.updateApproxMedian(...)` and just persists the three returned values (`approxMedian`, `step`, `positive`) back into `medianState`. Contains no logic of its own beyond that persistence — consistent with the "no math in the hook itself" design philosophy above.
+
+### `test/` — file tree
+
+```text
+test/
+├── unit/
+│   ├── SnapshotWindowLibrary.t.sol
+│   ├── TickCheckerLibrary.t.sol
+│   ├── GetPriorityFeeLibrary.t.sol
+│   ├── PenaltyFeeLibrary.t.sol
+│   └── FrugalMedianLibrary.t.sol
+├── fork/
+│   └── PulseHookForkIntegration.t.sol
+├── integration/
+│   └── PulseHook.t.sol
+└── utils/
+```
+
+### `test/` — tests
+| File | Responsibility |
+|---|---|
+| `test/unit/PenaltyFeeLibrary.t.sol` | Penalty curve shape: no fee below threshold, monotonic increase, saturation at max. |
+| `test/unit/FrugalMedianLibrary.t.sol` | Median estimator convergence and step-size behavior over a sequence of observations. |
+| `test/unit/GetPriorityFeeLibrary.t.sol` | Priority-fee reading under different `vm.fee` / `vm.txGasPrice` combos, incl. legacy-tx edge case. |
+| `test/unit/SnapshotWindowLibrary.t.sol` | Once-per-block recording, circular-buffer wraparound, and averaging. |
+| `test/unit/TickCheckerLibrary.t.sol` | Tick-movement gate — from baseline establishment through acceptance/rejection at different liquidity levels. |
+| `test/integration/PulseHook.t.sol` | Deploys the hook against a local `PoolManager`, drives it through real swaps — exercises all five libraries together via the orchestration layer. |
+| `test/fork/PulseHookForkIntegration.t.sol` | End-to-end test on a forked mainnet RPC against the real WETH/USDC pool — validates the system under real liquidity conditions. |
+| `test/utils` | Shared test infra (pool/currency deployment helpers, liquidity-position minting) used by integration tests. |
+
+Every library has its own dedicated unit-test file — this 1:1 mapping is a deliberate project convention.
+
+---
+
+## 6. Known Limitations
+
+### Malicious deployments
+Anyone can deploy their own copy of Pulse Hook (MIT license) and pair it with low-quality or malicious tokens. The presence of a Pulse Hook deployment, a whitelisted-token configuration, or MEV protection generally **must not be read as an endorsement** of the tokens, issuers, or deploying party. Users/developers should independently vet token contracts, ownership/admin permissions, pool configuration, and the deployer's reputation.
+
+### Off-chain MEV coordination
+Pulse Hook cannot stop MEV actors who coordinate off-chain with parties controlling transaction inclusion/ordering (e.g. private deals with block builders/sequencers). This kind of coordination happens outside the hook's on-chain execution environment and can't be solved by on-chain logic alone.
+
+---
+
+## 7. Current State & Future Development
+
+**Status:** Working implementation, born out of a hackathon; has undergone internal review but **not yet an independent/external security audit**.
+
+**Planned / potential directions:**
+- **Mathematical refinement** — use more on-chain data from real sandwich attacks to validate assumptions and refine the curve/parameters (Section 4).
+- **Launchpad integrations** — the hook is designed to work standalone with no external dependencies, making it a good fit for launchpads (including small teams / emerging networks with limited infra). Future work: formal integrations with launchpads of various sizes.
+- **Ecosystem integrations** — pursuing official Uniswap Hook verification / inclusion in hook lists. A community integration with [HookGuard](https://chaosxcode.github.io/hookguard/) is already underway — first commit merged: https://github.com/no-hive/pulse_hook/pull/1
+- **Independent security audit** — considered valuable and important given the non-trivial math (casts, calculation curves) in the implementation. Not yet done.
+
+---
+
+## 8. Contributing & Conventions
+
+- No formal contributor infrastructure yet (tracked in [this open issue](https://github.com/no-hive/pulse_hook/issues/4)) — project came out of a hackathon.
+- Commit style: [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0), e.g.:
+  ```
+  feat: add dynamic fee calculation
+  fix(hook): handle empty swap window
+  docs: improve deployment guide
+  test: add beforeSwap coverage
+  ```
+- Before opening a PR, enable the local commit-message validation hook:
+  ```bash
+  git config core.hooksPath .githooks
+  chmod +x .githooks/commit-msg
+  ```
+- **Atomicity matters:** libraries and their tests should stay self-contained so contributors can improve one part without needing to understand or touch the rest of the project. This is the core design philosophy (see Section 5).
+- Getting-started / local setup guide: https://pulse-hook.mintlify.site/guides/overview
+
+---
+
+## 9. Role of the AI / How to Work With This Project
+
+When helping with this project, an AI assistant should:
+- Respect the **library-isolation architecture** — math changes belong in the relevant `src/lib/*.sol` file, not in `PulseHook.sol`. The hook file should stay orchestration-only (Section 5).
+- Treat the constants in Section 4 (2.7x threshold, 10% cap, `SNAPSHOT_WINDOW = 15`, etc.) as **deliberately chosen**, not arbitrary — any proposal to change them should engage with the reasoning already given (target penalty table, non-stationary fee behavior, etc.), not just assert a different number.
+- Assume **every library has (or should have) a matching unit test** in `test/unit/`. When changing library logic, update/add the matching test.
+- Remember that **the hook only ever modifies the swap's dynamic fee** — no other pool behavior should change. Any hook logic that reaches beyond fee calculation is out of scope unless explicitly discussed.
+- Understand the two-track logic: **fee is applied to every swap** on every pool (whitelisted or not), but **only whitelisted, registered pools can influence the shared median**. These are separate mechanisms — don't conflate them.
+- Follow Conventional Commits style when writing commit messages.
+- Keep gas-efficiency and "no external infra" (no oracles, no off-chain modules) as hard constraints on any proposed solution.
+- Flag but don't over-claim: Pulse Hook reduces/discourages MEV via economic penalty — it does **not** claim to eliminate MEV entirely, especially off-chain coordination scenarios (Section 6).
+- When in doubt about parameters not covered in Section 4 (e.g. the exact whitelist token list, or exact `TickCheckerLibrary` liquidity-scaling constants), ask rather than assume.
+
+---
+
+## 10. Deployment & Usage Guides
+
+There are two completely different paths depending on what you want to do. Pick one — most people only ever need the first.
+
+| If you want to... | Guide | Do you need to deploy anything? |
+|---|---|---|
+| Just use the hook that's already live on some network for your own pool | **10.1 Init Pool** | No — only create a pool referencing the existing hook address |
+| Install, test, modify, or deploy your own copy of the hook (contributing, hackathon judging, custom fork) | **10.2 Deploy Hook** | Yes — clone, build, and deploy the contract yourself |
+
+### 10.1 Init Pool — use an already-deployed hook
+
+If a Pulse Hook is already deployed on your target network, you don't need to deploy anything — just create a Uniswap v4 pool that references it.
+
+1. **Pick your network** and find the deployed Pulse Hook address for it (check the docs site / repo for the current address list — it's per-network).
+2. **Create your pool** following the official Uniswap v4 guide: [Create a Pool — Uniswap v4](https://developers.uniswap.org/docs/protocols/v4/guides/create-pool)
+3. **When configuring your `PoolKey`:**
+   - `hooks` — set to the deployed Pulse Hook address for your network
+   - `fee` — select **Dynamic Fee** (this is mandatory — the hook only works through the dynamic-fee mechanism)
+   - Everything else — follow the standard Uniswap v4 pool creation flow, no Pulse-Hook-specific changes needed
+
+That's the entire Pulse-Hook-specific part: correct hook address + Dynamic Fee enabled. Nothing else about pool creation changes.
+
+### 10.2 Deploy Hook — deploy your own copy
+
+Deployment is fully automated by the deployment script — **no manual hook-address mining or CREATE2 salt-finding needed.**
+
+**1. Clone the repo**
+```bash
+git clone https://github.com/no-hive/pulse_hook.git
+cd pulse_hook
+```
+It's a monorepo: hook implementation, tests, docs, and AI-coding-agent instructions all live here.
+
+**2. Install dependencies**
+```bash
+forge install
+```
+
+**3. Build and test** — confirm everything compiles and passes before deploying:
+```bash
+forge build
+forge test
+```
+
+**4. Configure your environment**
+```bash
+cp .env.example .env
+```
+Set in `.env`:
+- `RPC_URL` — RPC endpoint for the target network
+- `PRIVATE_KEY` — deploying wallet's private key
+- `WALLET_ADDRESS` — address matching `PRIVATE_KEY`
+
+⚠️ Never commit `.env` or expose the private key. Use a dedicated wallet funded only with what's needed for gas.
+
+Sanity-check the RPC before broadcasting:
+```bash
+cast chain-id --rpc-url $RPC_URL
+```
+
+**5. `HelperConfig` — how network selection works**
+
+The deploy script reads `block.chainid` at deploy time via `HelperConfig.getDeploymentConfig()` and auto-selects the right config — no manual chain-ID flag needed. Each network config provides the **Uniswap v4 Pool Manager address** and a list of **trusted ("sound") tokens** for that chain (the whitelist checked in `_afterInitialize` — see Section 3).
+
+Currently configured networks:
+
+| Network | Chain ID |
+|---|---:|
+| Ethereum Mainnet | `1` |
+| Unichain | `130` |
+| Ethereum Sepolia | `11155111` |
+| Base Mainnet | `8453` |
+| Base Sepolia | `84532` |
+| Robinhood | `4663` |
+| Arbitrum One | `42161` |
+
+**Deploying to an unsupported network?** You must add its config to `HelperConfig` first — don't deploy without it. Pattern:
+```solidity
+function getMyNetworkConfig() internal pure returns (NetworkConfig memory) {
+    address[] memory soundTokens = new address[](3);
+    soundTokens[0] = address(0);
+    soundTokens[1] = WETH_ADDRESS;
+    soundTokens[2] = USDC_ADDRESS;
+
+    return NetworkConfig({
+        poolManager: POOL_MANAGER_ADDRESS,
+        soundTokens: soundTokens
+    });
+}
+```
+...then wire it into `getDeploymentConfig()`:
+```solidity
+else if (block.chainid == MY_NETWORK_CHAIN_ID) {
+    return getMyNetworkConfig();
+}
+```
+`HelperConfig` only *selects* addresses/config — it never deploys the Pool Manager or tokens itself. If `block.chainid` matches nothing configured, deployment should **revert with an unsupported-network error**, not silently fall back to another network's config.
+
+**6. Deploy**
+```bash
+forge script script/00_DeployHook.s.sol:DeployHookScript \
+  --rpc-url $RPC_URL \
+  --private-key $PRIVATE_KEY \
+  --sender $WALLET_ADDRESS \
+  --broadcast
+```
+No chain ID or Pool Manager address needed manually — the script detects the network, loads `HelperConfig`, mines the correct hook address, deploys, and broadcasts, in that order. Double-check `RPC_URL` points to the intended network before adding `--broadcast`.
+
+**7. Verify the deployment**
+
+Confirm code exists at the deployed address:
+```bash
+cast code "$DEPLOYED_HOOK_ADDRESS" --rpc-url "$RPC_URL"
+```
+Confirm the hook permissions match what's implemented:
+```bash
+cast call "$DEPLOYED_HOOK_ADDRESS" \
+  "getHookPermissions()(bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool,bool)" \
+  --rpc-url "$RPC_URL"
+```
+(Note: this is the *hook's* address, not the Uniswap v4 Pool Manager address.)
+
+**8. Use it** — once deployed, follow **Section 10.1 (Init Pool)** to actually create a pool with it.
+
+---
+
+## 11. Useful Prompt Templates
+
+**Implement/modify a library:**
+> "In `src/lib/[LibraryName].sol`, [describe the change]. Keep it consistent with the project's library-isolation architecture (Section 5) — no changes to `PulseHook.sol` orchestration unless required. Also update/add the matching test in `test/unit/[LibraryName].t.sol`."
+
+**Explain a mechanism:**
+> "Walk me through how [the median update / the penalty curve / the whitelist check] works in Pulse Hook, referencing the math in Section 4 and the E2E flow in Section 3."
+
+**Deploy or configure for a new network:**
+> "Walk me through deploying Pulse Hook to [network name] using Section 10.2 — tell me if it's already configured in `HelperConfig` or if I need to add a new network config first."
+
+**Propose or evaluate a curve/parameter change:**
+> "Given the alternatives already rejected in Section 4.2 (linear, quadratic, step zones) and the reasoning behind the current constants, would [proposed change] repeat one of those known problems (cliff edges, too-soft-then-too-steep, punishing honest bidders)?"
+
+**Review a proposed change for scope creep:**
+> "Does this proposed change stay within Pulse Hook's scope of 'only modifies the swap's dynamic fee, no external infra' (Section 2)? Flag anything that goes beyond that."
+
+**Security-focused question:**
+> "Given the Known Limitations in Section 6, does [proposed feature/change] introduce any new attack surface around whitelist manipulation, median manipulation, or dust-swap gaming?"
+
+**Onboarding a new contributor:**
+> "Summarize the project architecture (Section 5), the math in Section 4, and the E2E swap flow (Section 3) for someone about to modify [specific library]."
