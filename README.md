@@ -12,7 +12,7 @@
 
 This hook is build to solve MEV problem for pools with low liquidity - perfect ready-to-use solution for creator coins pools, niche memecoins or launchpads. It uses a priority fee median to track unusual behavior and make MEV-patterned swaps less profitable.
 
-🧬 _No external off-chain modules or oracles. Runs entirely on-chain._
+🧬 _No external off-chain modules or oracles. Runs entirely on-chain. No Partner Integrations._
 
 > _inspired by [Uniswap v4 Truncated Oracle Hook](https://blog.uniswap.org/uniswap-v4-truncated-oracle-hook) and [median-oracles by saucepoint](https://github.com/saucepoint/median-oracles)_
 
