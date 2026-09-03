@@ -3,7 +3,7 @@ pragma solidity ^0.8.15;
 
 /// @title GetPriorityFeeLibrary
 /// @notice Reads the EIP-1559 priority fee paid by the current transaction.
-/// @dev Stateless — a single pure/view helper, no storage.
+/// @dev Stateless - a single pure/view helper, no storage.
 library GetPriorityFeeLibrary {
     /// @notice Returns the priority fee (tip above the base fee) paid by
     ///         the currently executing transaction.

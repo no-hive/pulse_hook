@@ -11,11 +11,11 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 ///      price (or don't move it at all, e.g. tiny/dust trades) could each
 ///      nudge the running median in the same direction. Requiring a
 ///      minimum tick displacement means the median only reacts to swaps
-///      that actually pushed the pool to a new price level — not to
+///      that actually pushed the pool to a new price level - not to
 ///      repeated pokes at essentially the same price, which is exactly the
 ///      kind of cheap, repeatable action an attacker would use to drag the
 ///      median toward a favorable value. The required displacement is not
-///      a flat constant — it is scaled by the pool's current liquidity
+///      a flat constant - it is scaled by the pool's current liquidity
 ///      depth in `requiredMovement`, because the same tick move means very
 ///      different things in a deep pool vs. a shallow one.
 ///
@@ -46,15 +46,15 @@ library TickCheckerLibrary {
     uint128 internal constant REFERENCE_LIQUIDITY = 1e21;
 
     /// @notice Hard floor on the computed threshold.
-    /// @dev Without it, a near-zero-liquidity pool could push the
-    ///      requirement to an absurdly large value (median effectively
-    ///      frozen forever).
-    int24 internal constant MIN_TICK_THRESHOLD = 1;
-
-    /// @notice Hard ceiling on the computed threshold.
     /// @dev Without it, an extremely deep pool could push the requirement
     ///      to 0 (median updates on every single swap, defeating the whole
     ///      point of gating it).
+    int24 internal constant MIN_TICK_THRESHOLD = 1;
+
+    /// @notice Hard ceiling on the computed threshold.
+    /// @dev Without it, a near-zero-liquidity pool could push the
+    ///      requirement to an absurdly large value (median effectively
+    ///      frozen forever).
     int24 internal constant MAX_TICK_THRESHOLD = 200;
 
     /// @notice Per-pool tick-checker bookkeeping.

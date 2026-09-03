@@ -6,7 +6,7 @@ pragma solidity ^0.8.15;
 /// @notice Approximate, O(1)-space running-median estimator ("frugal
 ///         median" / "1% method"): tracks an estimate of the median of a
 ///         stream of values without storing the stream itself.
-/// @dev Pure math only — no storage, no coupling to any specific caller.
+/// @dev Pure math only - no storage, no coupling to any specific caller.
 ///      Ported from the upstream project linked above; kept as close to
 ///      the original as possible so it stays easy to diff against future
 ///      upstream fixes.
@@ -14,8 +14,8 @@ library FrugalMedianLibrary {
     /// @notice Computes the frugal-median estimate for an entire sequence
     ///         of values in one call, starting from a fresh estimator.
     /// @dev Folds `updateApproxMedian` over `sequence` in order. The hook
-    ///      itself does not call this directly — it feeds one observation
-    ///      at a time via `updateApproxMedian` — this is provided for
+    ///      itself does not call this directly - it feeds one observation
+    ///      at a time via `updateApproxMedian` - this is provided for
     ///      batch use (e.g. tests, backfills).
     /// @param sequence The values to estimate the median of, in order.
     /// @return approxMedian The resulting approximate median.
@@ -52,9 +52,9 @@ library FrugalMedianLibrary {
         unchecked {
             if (newNumber > approxMedian) {
                 step += positive ? stepIncrement(newNumber) : -stepIncrement(newNumber);
-                // Integer division truncates toward zero, so a positive
-                // step below 1 would round down to 0 and stall the
-                // estimate; floor at 1 instead.
+                // After a direction flip, `step` can be reset to a
+                // non-positive value; adding it as-is would stall the
+                // estimate (or push it the wrong way), so floor at 1.
                 approxMedian += (step > 0) ? step : int256(1);
                 if (approxMedian > newNumber) {
                     step += newNumber - approxMedian;
@@ -66,6 +66,7 @@ library FrugalMedianLibrary {
                 positive = true;
             } else if (newNumber < approxMedian) {
                 step += !positive ? stepIncrement(newNumber) : -stepIncrement(newNumber);
+                // Mirror of the floor-at-1 correction above, for downward moves.
                 approxMedian -= (step > 0) ? step : int256(1);
                 // Mirror of the overshoot correction above, for downward moves.
                 if (approxMedian < newNumber) {

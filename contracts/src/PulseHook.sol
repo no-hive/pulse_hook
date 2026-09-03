@@ -47,7 +47,7 @@ import {TickCheckerLibrary} from "./lib/TickCheckerLibrary.sol";
 ///      accepted update.
 ///
 ///      Read/compute logic lives in libraries; this contract is
-///      orchestration only — it holds storage, implements the BaseHook
+///      orchestration only - it holds storage, implements the BaseHook
 ///      callbacks, and wires PoolManager data into the library calls.
 contract PulseHook is BaseHook {
     using PoolIdLibrary for PoolKey;
@@ -67,6 +67,11 @@ contract PulseHook is BaseHook {
     ///      outright instead of silently doing nothing.
     error NotDynamicFee();
 
+    /// @notice Thrown in the constructor when `_listedTokens` contains more
+    ///         than 2 occurrences of `address(0)`.
+    /// @dev A pool only ever has 2 currency slots, so more than 2
+    ///      zero-address entries cannot correspond to real currencies and
+    ///      is rejected as a malformed input array.
     error TooManyZeroAddressTokens();
 
     // -----------------------------------------------
@@ -81,7 +86,7 @@ contract PulseHook is BaseHook {
     event PoolRegistered(PoolId indexed id, bool registered);
 
     /// @notice Emitted whenever the running median estimator is updated.
-    /// @dev The key metric of the system — without this, tracking the
+    /// @dev The key metric of the system - without this, tracking the
     ///      median's evolution requires an archive node/tracing. Emitted
     ///      from `_afterSwap` only when the tick checker allows the update.
     /// @param id The pool whose swap triggered the update.
@@ -92,7 +97,7 @@ contract PulseHook is BaseHook {
 
     /// @notice Emitted for every swap once its dynamic LP fee is computed.
     /// @dev Lets anyone reconstruct, after the fact, who was penalized and
-    ///      by how much — useful both for trader/LP transparency and for
+    ///      by how much - useful both for trader/LP transparency and for
     ///      debugging the penalty model.
     /// @param id The pool being swapped in.
     /// @param fee The dynamic LP fee applied (without the override flag).
@@ -106,7 +111,7 @@ contract PulseHook is BaseHook {
 
     /// @notice Running state for the approximate-median estimator.
     /// @dev NOTE: this state is shared across all pools that use this hook
-    ///      instance — there is a single global median, not one per pool.
+    ///      instance - there is a single global median, not one per pool.
     ///      Updated in _afterSwap (see _updateMedian), conditionally on the
     ///      tick checker allowing it for that pool.
     struct MedianState {
@@ -147,6 +152,13 @@ contract PulseHook is BaseHook {
     // -----------------------------------------------
 
     /// @notice Deploys the hook and seeds the token whitelist.
+    /// @dev `_listedTokens` may contain `address(0)` (Uniswap v4's
+    ///      representation of the native currency, e.g. ETH) to mark native
+    ///      currency itself as "listed" - up to 2 occurrences are tolerated
+    ///      (a pool has at most 2 currency slots, currency0/currency1, so 2
+    ///      is the most that could ever be meaningful); more than that
+    ///      reverts with `TooManyZeroAddressTokens`, since it almost
+    ///      certainly indicates a malformed input array rather than intent.
     /// @param _poolManager The Uniswap v4 PoolManager this hook is attached to.
     /// @param _listedTokens Token addresses to mark as "listed" (see `isListedToken`).
     constructor(IPoolManager _poolManager, address[] memory _listedTokens) BaseHook(_poolManager) {
@@ -257,8 +269,8 @@ contract PulseHook is BaseHook {
         if (!key.fee.isDynamicFee()) revert NotDynamicFee();
         poolManager.updateDynamicLPFee(key, PenaltyFeeLibrary.BASIC_FEE);
 
-        // Extra value assignment needed to depict
-        // which pool we should trust and which we should not.
+        // Register the pool: it is trusted to feed the median only if at
+        // least one of its two currencies is on the listed-token whitelist.
         PoolId id = key.toId();
         address token0 = Currency.unwrap(key.currency0);
         address token1 = Currency.unwrap(key.currency1);
@@ -293,7 +305,7 @@ contract PulseHook is BaseHook {
     ///      LP fee.
     /// @param key The pool's key.
     /// @return selector The function selector required by the BaseHook callback interface.
-    /// @return delta Always zero — this hook does not adjust swap amounts.
+    /// @return delta Always zero - this hook does not adjust swap amounts.
     /// @return fee The dynamic LP fee to apply to this swap, OR-ed with `LPFeeLibrary.OVERRIDE_FEE_FLAG`.
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
@@ -324,13 +336,13 @@ contract PulseHook is BaseHook {
     ///      running median is updated with this swap's priority fee ONLY
     ///      if the tick checker (TickCheckerLibrary.movedEnoughToUpdate)
     ///      decides the pool's price has moved far enough since the last
-    ///      accepted update — see that library's docs for why. This runs
+    ///      accepted update - see that library's docs for why. This runs
     ///      against the POST-swap tick, since afterSwap fires once the
     ///      swap (and its effect on the pool's price) has already been
     ///      applied.
     /// @param key The pool's key.
     /// @return selector The function selector required by the BaseHook callback interface.
-    /// @return delta Always zero — this hook does not adjust settlement amounts.
+    /// @return delta Always zero - this hook does not adjust settlement amounts.
     function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
         internal
         override

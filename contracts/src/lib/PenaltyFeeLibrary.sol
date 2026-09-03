@@ -7,7 +7,7 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /// @title PenaltyFeeLibrary
 /// @notice Computes the dynamic LP fee to charge a swap, penalizing
 ///         priority fees that sit far above the smoothed reference median.
-/// @dev Stateless — pure math over caller-supplied values, no storage.
+/// @dev Stateless - pure math over caller-supplied values, no storage.
 library PenaltyFeeLibrary {
     using SafeCast for uint256;
 
@@ -62,8 +62,8 @@ library PenaltyFeeLibrary {
 
     /// @notice Computes the dynamic LP fee to charge for a swap.
     /// @dev Compares `priorityFee` against `referenceMedian` (the caller
-    ///      is expected to pass the smoothed reference — e.g. the average
-    ///      of a rolling snapshot window — not a live, single-block value):
+    ///      is expected to pass the smoothed reference - e.g. the average
+    ///      of a rolling snapshot window - not a live, single-block value):
     ///      - No reference data yet (`referenceMedian <= 0`): charge only
     ///        `BASIC_FEE`, to avoid dividing by zero.
     ///      - Ratio below `RATIO_THRESHOLD` (2.7x the reference): no
@@ -97,7 +97,7 @@ library PenaltyFeeLibrary {
 
         uint256 penaltyPpm;
         if (priorityFeeRatioScaled < RATIO_THRESHOLD) {
-            // Priority fee is within the tolerated range — no penalty.
+            // Priority fee is within the tolerated range - no penalty.
             penaltyPpm = 0;
         } else {
             // How far above the threshold this swap's ratio is, scaled by

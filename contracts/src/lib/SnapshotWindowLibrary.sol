@@ -12,7 +12,7 @@ pragma solidity ^0.8.15;
 ///      Operates directly on the caller's storage via a `storage` struct
 ///      reference (the same pattern OpenZeppelin uses for EnumerableSet /
 ///      Checkpoints), so the hook contract never has to duplicate the
-///      window bookkeeping logic itself — it just holds a `State` slot and
+///      window bookkeeping logic itself - it just holds a `State` slot and
 ///      calls into this library.
 library SnapshotWindowLibrary {
     /// @notice How many past blocks' median snapshots are averaged
@@ -56,7 +56,7 @@ library SnapshotWindowLibrary {
     /// @notice Averages the populated slots of the snapshot window.
     /// @dev Returns 0 if no snapshot has been recorded yet (e.g. the very
     ///      first block the hook is ever used in); the caller
-    ///      (`PenaltyFeeLibrary.getDynamicFee_`) treats a non-positive
+    ///      (`PenaltyFeeLibrary._getDynamicFee`) treats a non-positive
     ///      reference as "no data yet" and falls back to the baseline fee
     ///      rather than dividing by zero.
     /// @param self The snapshot-window storage for this hook instance.
