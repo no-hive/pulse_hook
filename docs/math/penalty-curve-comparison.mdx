@@ -40,7 +40,7 @@ penalty% = 10 * frac
 
 The simplest option: the penalty grows in direct proportion to how far past the threshold the swap is.
 
-**Problem:** it's too aggressive right at the threshold. A swap at 3.5x, only slightly over the 2.7x line and arguably still an eager but honest bidder, already gets hit with a 1.1% penalty. Real MEV / sandwich bidding tends to sit far above the median (5x, 10x\+), not just barely above it. A linear curve punishes the "slightly aggressive but honest" trader almost as hard, proportionally, as it punishes genuine outliers, which is the opposite of the goal.
+**Problem:** it's too aggressive right at the threshold. A swap at 3.5x, only slightly over the 2.7x line and arguably still an eager but honest bidder, already gets hit with a 1.1% penalty. Real MEV / sandwich bidding tends to sit far above the median (5x, 10x+), not just barely above it. A linear curve punishes the "slightly aggressive but honest" trader almost as hard, proportionally, as it punishes genuine outliers, which is the opposite of the goal.
 
 ## 2. Quadratic (`frac^2`)
 

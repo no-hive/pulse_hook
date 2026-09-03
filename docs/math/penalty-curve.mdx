@@ -42,7 +42,7 @@ Check the table below to see what ratio will result in what total fee.
   />
 </Frame>
 
-We can see it is 1.5 curve that has delayed start and has a strict 10% penalty cap.
+You can see it is 1.5 curve that has delayed start and has a strict 10% penalty cap.
 
 ## Design questions
 
@@ -51,11 +51,11 @@ We can see it is 1.5 curve that has delayed start and has a strict 10% penalty c
 </Card>
 
 <Card title="Why does the penalty start only from 2.7x?">
-  We didn't want to punish real users. Even people who pick "fast" in their wallet rarely go above ~3x the typical priority fee. So the curve starts at 2.7x — the penalty only really kicks in once you're past what a normal user would ever pay.
+  I didn't want to punish real users. Even people who pick "fast" in their wallet rarely go above ~3x the typical priority fee. So the curve starts at 2.7x — the penalty only really kicks in once you're past what a normal user would ever pay.
 </Card>
 
 <Card title="Why is the cap 10%?">
-  Sandwich attacks need two transactions, so a 10% cap becomes ~20% across the attack — more than enough to kill the profit. We capped it rather than let it grow uncapped so a swap can never eat a user's (or bot's) entire amount. It's the sweet spot between real deterrence and not being punitive.
+  Sandwich attacks need two transactions, so a 10% cap becomes ~20% across the attack — more than enough to kill the profit. I capped it rather than let it grow uncapped so a swap can never eat a user's (or bot's) entire amount. It's the sweet spot between real deterrence and not being punitive.
 </Card>
 
 ## The formula

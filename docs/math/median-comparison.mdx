@@ -21,7 +21,7 @@ Bottom line: an exact median doesn't fit on-chain execution. Its cost grows with
 
 |  | **P² (Jain & Chlamtac, 1985)** | **Frugal2U (Ma, Muthukrishnan, Sandler, 2013)** |
 | --- | --- | --- |
-| State | 5 markers: heights `q_0..q_4` \+ positions `n_0..n_4` (ten numbers) | 3 variables: `approxMedian`, `step`, `positive` |
+| State | 5 markers: heights `q_0..q_4` + positions `n_0..n_4` (ten numbers) | 3 variables: `approxMedian`, `step`, `positive` |
 | Update | Parabolic (or linear) interpolation of marker positions on every observation | A simple move of the estimate by `step` toward the new value |
 | Cost per step | Higher: several comparisons plus an interpolation formula for the 3 inner markers | Lower: a couple of additions / subtractions and one division |
 | How it reacts to a level shift | Marker positions `n_i` grow proportionally to the total number of observations, so the algorithm carries "inertia" from its whole history. It's **built for stationary distributions** and adapts to a new level slowly, still partly leaning on long-stale observations | `step` grows on a repeated same-direction move and **shrinks sharply on a reversal** (decremented, then clamped down to at most 1 if it's still above that), so the estimate can "forget" the old level and re-adjust to a new one fast |
